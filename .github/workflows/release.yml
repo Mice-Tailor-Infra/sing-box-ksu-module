@@ -88,9 +88,15 @@ jobs:
           sed -i "s/\${DISPLAY_VER}/$DISPLAY_VER/" module.prop
           sed -i "s/\${V_CODE}/$V_CODE/" module.prop
 
-          # 4. 提取当前版本的 Changelog 用于 GitHub Release 页面
-          VERSION_ESCAPED=$(echo "$DISPLAY_VER" | sed 's/\./\\./g')
-          sed -n "/## $VERSION_ESCAPED/,/## /p" CHANGELOG.md | sed '$d' > release_body.txt
+          # [修复] 只有在非 Dispatch 事件时，才去切 CHANGELOG
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+              echo "### 🚀 上游配置变更" > release_body.txt
+              echo "${{ env.UPSTREAM_MSG }}" >> release_body.txt
+          else
+              # 4. 提取当前版本的 Changelog 用于 GitHub Release 页面
+              VERSION_ESCAPED=$(echo "$DISPLAY_VER" | sed 's/\./\\./g')
+              sed -n "/## $VERSION_ESCAPED/,/## /p" CHANGELOG.md | sed '$d' > release_body.txt
+          fi
       - name: Create Module Package
         run: |
           # 1. 物理锁死带版本号的文件名
