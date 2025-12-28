@@ -72,24 +72,28 @@ jobs:
 
       - name: Prepare Module Versioning
         run: |
-          # 1. 提取版本号 (SSOT)
-          DISPLAY_VER=$(grep -m 1 "^## " CHANGELOG.md | sed 's/## //')
+          # 1. 提取原始版本号
+          RAW_VER=$(grep -m 1 "^## " CHANGELOG.md | sed 's/## //')
 
-          # [新增判断] 如果是 Dispatch 触发，为了强制触发 KSU 更新，我们自动在 r 后缀后面加上 build 时间戳
-          # 这样即便你没改日志，versionCode 也会变，用户能收到“配置更新”
+          # 【核心修复】强制剥离旧的 cfg 后缀，防止堆叠
+          # 无论原来是 r18 还是 r18-cfg1234，处理后都变成 r18
+          BASE_VER=$(echo "$RAW_VER" | sed -E 's/-cfg[0-9]+//g')
+
+          DISPLAY_VER="$BASE_VER"
+
+          # 2. 如果是配置更新触发，重新打上单一的 cfg 标签
           if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-             DISPLAY_VER="${DISPLAY_VER}-cfg$(date +%H%M)"
+             DISPLAY_VER="${BASE_VER}-cfg$(date +%H%M)"
           fi
 
           echo "DISPLAY_VER=$DISPLAY_VER" >> $GITHUB_ENV
 
-          # 2. 计算 versionCode
-          MOD_REV=$(echo "$DISPLAY_VER" | sed 's/.*-r//')
-          # [加固] 如果 grep 没找到数字，默认给个 0，防止脚本崩溃
+          # 3. 计算 versionCode (保持原样，它是递增的没问题)
+          MOD_REV=$(echo "$BASE_VER" | sed 's/.*-r//')
           CLEAN_REV=$(echo "$MOD_REV" | grep -oE '^[0-9]+' || echo "0")
-          V_CODE=$(date +%Y%m%d)$CLEAN_REV
+          V_CODE=$(date +%Y%m%d)${{ github.run_number }}
 
-          # 3. 注入模板 (不触碰其他任何行)
+          # 4. 注入模板 (不触碰其他任何行)
           sed -i "s/\${DISPLAY_VER}/$DISPLAY_VER/" module.prop
           sed -i "s/\${V_CODE}/$V_CODE/" module.prop
 
