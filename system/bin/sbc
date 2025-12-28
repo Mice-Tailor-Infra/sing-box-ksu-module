@@ -3,7 +3,7 @@
 # Mice System Tools - Sing-box Controller
 WORKSPACE="/data/adb/sing-box-workspace"
 BIN="$WORKSPACE/bin/sing-box"
-SERVICE_SH="/data/adb/modules/sing-box-ksu-module/service.sh"
+SERVICE_NAME="sing-box-ksu-module/service.sh"
 LOG_FILE="$WORKSPACE/var/log/sing-box.log"
 
 case "$1" in
@@ -13,14 +13,34 @@ case "$1" in
         else
             echo "正在启动 Sing-box (守护模式)..."
             # 必须使用 nohup 或重定向，确保 Shell 退出后循环不被挂起
-            sh "$SERVICE_SH" > /dev/null 2>&1 &
+            nohup sh "$SERVICE_NAME" > /dev/null 2>&1 &
             echo "启动指令已发送，请通过 sbc status 观察。"
         fi
         ;;
     stop)
-        echo "正在停止 Sing-box..."
-        pkill -f "$BIN"
-        echo "已停止。"
+        echo "正在执行暴力停机..."
+        
+        # 1. 找到二进制进程的 PID
+        PID=$(pgrep -f "$BIN")
+        
+        if [ ! -z "$PID" ]; then
+            # 2. 找到它的父进程 (PPid)
+            # ps -o ppid= 会直接输出父进程号
+            PPID=$(ps -o ppid= -p "$PID" | tr -d ' ')
+            
+            # 3. 优先杀掉父进程 (service.sh)，切断重试循环
+            if [ ! -z "$PPID" ]; then
+                kill -9 "$PPID" >/dev/null 2>&1 || true
+            fi
+            
+            # 4. 补刀杀掉二进制进程
+            kill -9 "$PID" >/dev/null 2>&1 || true
+        fi
+
+        # 5. 二次清理：确保没有任何残留的 service.sh 进程
+        pkill -9 -f "$SERVICE_NAME" >/dev/null 2>&1 || true
+        
+        echo "✅ 所有相关进程已强制清除。"
         ;;
     restart)
         $0 stop
