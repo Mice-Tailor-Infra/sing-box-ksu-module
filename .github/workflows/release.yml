@@ -46,25 +46,21 @@ jobs:
 
       - name: Prepare Module Versioning
         run: |
-          # 动态计算修订号与版本
-          MOD_REV="${{ github.run_number }}"
-          DISPLAY_VER="${SB_VER}-r${MOD_REV}"
-          V_CODE=$(date +%Y%m%d)$MOD_REV
-
+          # 1. SSOT：从 CHANGELOG 第一行 ## 标题直接提取 DISPLAY_VER (e.g., v1.12.14-r12)
+          DISPLAY_VER=$(grep -m 1 "^## " CHANGELOG.md | sed 's/## //')
           echo "DISPLAY_VER=$DISPLAY_VER" >> $GITHUB_ENV
 
-          # 替换 module.prop 中的占位符 (源码里要是 ${VAR} 格式)
+          # 2. 计算 V_CODE (提取 -r 后的数字)
+          MOD_REV=$(echo "$DISPLAY_VER" | sed 's/.*-r//')
+          V_CODE=$(date +%Y%m%d)$MOD_REV
+
+          # 3. 注入模板 (不触碰其他任何行)
           sed -i "s/\${DISPLAY_VER}/$DISPLAY_VER/" module.prop
           sed -i "s/\${V_CODE}/$V_CODE/" module.prop
 
-          # 提取 Changelog
+          # 4. 提取当前版本的 Changelog 用于 GitHub Release 页面
           VERSION_ESCAPED=$(echo "$DISPLAY_VER" | sed 's/\./\\./g')
           sed -n "/## $VERSION_ESCAPED/,/## /p" CHANGELOG.md | sed '$d' > release_body.txt
-
-          if [ ! -s release_body.txt ]; then
-            echo "Build from main branch commit: ${{ github.sha }}" > release_body.txt
-          fi
-
       - name: Create Package
         run: |
           # update.json 不打包，只在 Repo 层面维护
