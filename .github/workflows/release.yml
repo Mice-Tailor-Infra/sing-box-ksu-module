@@ -2,6 +2,8 @@ name: Build and Release Module
 
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [config_update] # 接收来自模板仓的信号
   push:
     branches: ["main"]
     paths-ignore:
@@ -57,10 +59,25 @@ jobs:
           # .env.example 也在根目录
           curl -fL -o .env.example https://raw.githubusercontent.com/cagedbird043/sing-box-config-templates/main/.env.example
 
+      - name: Extract Upstream Commit Message
+        run: |
+          # 核心点：从模板仓库抓取最新的 commit message
+          UPSTREAM_MSG=$(curl -s https://api.github.com/repos/cagedbird043/sing-box-config-templates/commits/mobile | jq -r '.commit.message')
+          echo "UPSTREAM_MSG<<EOF" >> $GITHUB_ENV
+          echo "$UPSTREAM_MSG" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
       - name: Prepare Module Versioning
         run: |
-          # 1. SSOT：从 CHANGELOG 第一行 ## 标题直接提取 DISPLAY_VER (e.g., v1.12.14-r12)
+          # 1. 提取版本号 (SSOT)
           DISPLAY_VER=$(grep -m 1 "^## " CHANGELOG.md | sed 's/## //')
+
+          # [新增判断] 如果是 Dispatch 触发，为了强制触发 KSU 更新，我们自动在 r 后缀后面加上 build 时间戳
+          # 这样即便你没改日志，versionCode 也会变，用户能收到“配置更新”
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+             DISPLAY_VER="${DISPLAY_VER}-cfg$(date +%H%M)"
+          fi
+
           echo "DISPLAY_VER=$DISPLAY_VER" >> $GITHUB_ENV
 
           # 2. 计算 V_CODE (提取 -r 后的数字)
@@ -76,9 +93,13 @@ jobs:
           sed -n "/## $VERSION_ESCAPED/,/## /p" CHANGELOG.md | sed '$d' > release_body.txt
       - name: Create Module Package
         run: |
-          # 使用 -ry 参数：r 是递归，y 是保持符号链接 (Store symbolic links as such)
-          ZIP_NAME="sing-box-ksu-module.zip"
-          zip -ry $ZIP_NAME bin etc system customize.sh service.sh module.prop update.json LICENSE CHANGELOG.md README.md .env.example config.template.json
+          # 1. 物理锁死带版本号的文件名
+          ZIP_NAME="sing-box-ksu-module-${{ env.DISPLAY_VER }}.zip"
+
+          # 2. 打包 (保持 -ry 软链指针)
+          zip -ry "$ZIP_NAME" bin etc system customize.sh service.sh module.prop update.json LICENSE CHANGELOG.md README.md .env.example config.template.json
+
+          # 3. 传导路径给 Release 步骤
           echo "ZIP_PATH=$ZIP_NAME" >> $GITHUB_ENV
 
       - name: Release Module
@@ -87,14 +108,14 @@ jobs:
           tag_name: ${{ env.DISPLAY_VER }}
           name: Sing-box for KSU [${{ env.DISPLAY_VER }}]
           body_path: release_body.txt
-          files: sing-box-ksu-module.zip
+          files: ${{ env.ZIP_PATH }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Backfill Update Info
         if: github.event_name != 'pull_request'
         run: |
           # 更新 update.json 并回写到仓库
-          jq ".version = \"${{ env.DISPLAY_VER }}\" | .versionCode = $(date +%Y%m%d)${{ github.run_number }} | .zipUrl = \"https://github.com/${{ github.repository }}/releases/latest/download/sing-box-ksu-module.zip\"" update.json > update.tmp
+          jq ".version = \"${{ env.DISPLAY_VER }}\" | .versionCode = $(date +%Y%m%d)${{ github.run_number }} | .zipUrl = \"https://github.com/${{ github.repository }}/releases/latest/download/${{ env.ZIP_PATH }}\"" update.json > update.tmp
           mv update.tmp update.json
 
           git config --global user.name "github-actions[bot]"
