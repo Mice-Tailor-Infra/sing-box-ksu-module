@@ -3,14 +3,11 @@ name: Build and Release Module
 on:
   workflow_dispatch:
   push:
-    branches:
-      - master
+    branches: ["main"]
     paths-ignore:
       - "README.md"
       - ".gitignore"
-  pull_request:
-    branches:
-      - master
+      - "update.json" # [防线1] 忽略 update.json 的变更触发
 
 jobs:
   build:
@@ -20,85 +17,77 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Fetch Specific Sing-box Binary (Stable Only)
+      - name: Fetch Material
         run: |
-          # 1. 抓取稳定版版本号
+          # 1. 抓取稳定二进制
           SB_VER=$(curl -s https://api.github.com/repos/cagedbird043/sing-box-auto-build-ci/releases | \
             jq -r 'map(select(.tag_name | contains("alpha") | not) | select(.tag_name | contains("dev") | not)) | .[0].tag_name')
 
-          if [ -z "$SB_VER" ] || [ "$SB_VER" == "null" ]; then
-            echo "Error: Could not find a stable release tag."
-            exit 1
-          fi
-          echo "Detected Stable Version: $SB_VER"
           echo "SB_VER=$SB_VER" >> $GITHUB_ENV
 
-          # 2. 获取下载地址并解压到已存在的 bin 目录
           DOWNLOAD_URL=$(curl -s https://api.github.com/repos/cagedbird043/sing-box-auto-build-ci/releases/tags/$SB_VER | \
             jq -r '.assets[] | select(.name | contains("android-arm64")) | .browser_download_url')
 
-          echo "Downloading from: $DOWNLOAD_URL"
           curl -L -o sing-box-android.tar.gz "$DOWNLOAD_URL"
-          # 注意：bin 目录由于存放了 sbc，已经存在，直接解压
           tar -xzf sing-box-android.tar.gz -C bin/
-          mv bin/sing-box* bin/sing-box || true
+
+          # 如果解压出来不叫 sing-box，才执行改名
+          if [ ! -f "bin/sing-box" ]; then
+              mv bin/sing-box* bin/sing-box
+          fi
           chmod +x bin/sing-box
 
-      - name: Fetch Config Template
-        run: |
-          # 1. 抓取 mobile 分支的配置模板
-          mkdir -p etc
+          # 2. 抓取模板
           curl -fL -o etc/config.template.json https://raw.githubusercontent.com/cagedbird043/sing-box-config-templates/mobile/config.template.json
-
-          # 2. 抓取 main 分支的 .env 示例文件
-          # 物理放置在根目录，因为它最终要出现在 workspace 的根目录
           curl -fL -o .env.example https://raw.githubusercontent.com/cagedbird043/sing-box-config-templates/main/.env.example
 
       - name: Prepare Module Versioning
         run: |
-          # 获取运行修订号
+          # 动态计算修订号与版本
           MOD_REV="${{ github.run_number }}"
           DISPLAY_VER="${SB_VER}-r${MOD_REV}"
           V_CODE=$(date +%Y%m%d)$MOD_REV
 
           echo "DISPLAY_VER=$DISPLAY_VER" >> $GITHUB_ENV
-          echo "V_CODE=$V_CODE" >> $GITHUB_ENV
 
-          # 动态修改元数据
-          sed -i "s/^version=.*/version=$DISPLAY_VER/" module.prop
-          sed -i "s/^versionCode=.*/versionCode=$V_CODE/" module.prop
-          sed -i "s/\"version\": \".*\"/\"version\": \"$DISPLAY_VER\"/" update.json
-          sed -i "s/\"versionCode\": .*,/\"versionCode\": $V_CODE,/" update.json
-          sed -i "s|\"zipUrl\": \".*\"|\"zipUrl\": \"https://github.com/${{ github.repository }}/releases/latest/download/sing-box-ksu-module.zip\"|" update.json
+          # 替换 module.prop 中的占位符 (源码里要是 ${VAR} 格式)
+          sed -i "s/\${DISPLAY_VER}/$DISPLAY_VER/" module.prop
+          sed -i "s/\${V_CODE}/$V_CODE/" module.prop
 
-      - name: Extract Changelog
-        run: |
-          # 提取 CHANGELOG.md 中对应版本的内容
-          # 逻辑：匹配 ## DISPLAY_VER 到下一个 ## 之间的内容
-          # 如果没找到，则使用最后一条 git commit message
-          VERSION_ESCAPED=$(echo "${{ env.DISPLAY_VER }}" | sed 's/\./\\./g')
+          # 提取 Changelog
+          VERSION_ESCAPED=$(echo "$DISPLAY_VER" | sed 's/\./\\./g')
           sed -n "/## $VERSION_ESCAPED/,/## /p" CHANGELOG.md | sed '$d' > release_body.txt
 
           if [ ! -s release_body.txt ]; then
-            git log -1 --pretty=%B > release_body.txt
+            echo "Build from main branch commit: ${{ github.sha }}" > release_body.txt
           fi
 
-      - name: Create Module Package
+      - name: Create Package
         run: |
-          # 没有任何 mv，直接打包，实现“所见即所得”
-          ZIP_NAME="sing-box-ksu-module.zip"
-          zip -r $ZIP_NAME bin etc system customize.sh service.sh module.prop update.json LICENSE CHANGELOG.md README.md .env.example
-          echo "ZIP_PATH=$ZIP_NAME" >> $GITHUB_ENV
+          # update.json 不打包，只在 Repo 层面维护
+          zip -r sing-box-ksu-module.zip bin etc system customize.sh service.sh module.prop LICENSE CHANGELOG.md README.md .env.example
 
       - name: Release Module
-        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.DISPLAY_VER }}
-          name: Sing-box for KSU [${{ env.DISPLAY_VER }}]
-          body_path: release_body.txt # 使用提取到的日志
-          files: ${{ env.ZIP_PATH }}
-          generate_release_notes: false # 禁用自动生成的记录，使用我们的 release_body.txt
-          overwrite_files: true
+          body_path: release_body.txt
+          files: sing-box-ksu-module.zip
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Backfill Update Info
+        if: github.event_name != 'pull_request'
+        run: |
+          # 更新 update.json 并回写到仓库
+          jq ".version = \"${{ env.DISPLAY_VER }}\" | .versionCode = $(date +%Y%m%d)${{ github.run_number }} | .zipUrl = \"https://github.com/${{ github.repository }}/releases/latest/download/sing-box-ksu-module.zip\"" update.json > update.tmp
+          mv update.tmp update.json
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add update.json
+          # [防线2] 加上 [skip ci] 确保万无一失
+          git commit -m "chore: auto-update metadata for ${{ env.DISPLAY_VER }} [skip ci]" || exit 0
+          git push origin main

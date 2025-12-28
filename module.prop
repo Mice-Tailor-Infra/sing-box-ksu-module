@@ -1,7 +1,7 @@
 id=sing-box-ksu-module
 name=Sing-box for KernelSU
-version=v1.12.14
-versionCode=20251228
+version=${DISPLAY_VER}
+versionCode=${V_CODE}
 author=cagedbird043
 description=Unified sing-box workspace with envsubst rendering. Includes system-wide envsubst tool.
-updateJson=https://raw.githubusercontent.com/cagedbird043/sing-box-ksu-module/main/update.json
+updateJson=https://miceworld.top/sing-box-ksu-module/update.json
