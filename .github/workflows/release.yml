@@ -9,7 +9,10 @@ on:
     paths-ignore:
       - "README.md"
       - ".gitignore"
-      - "update.json" # [防线1] 忽略 update.json 的变更触发
+      - "update.json"
+      - "_config.yml"
+      - "LICENSE"
+      # 注意：这里不能 ignore CHANGELOG.md，因为我们要回写它
 
 jobs:
   build:
@@ -80,32 +83,53 @@ jobs:
 
           echo "DISPLAY_VER=$DISPLAY_VER" >> $GITHUB_ENV
 
-          # 2. 计算 V_CODE (提取 -r 后的数字)
+          # 2. 计算 versionCode
           MOD_REV=$(echo "$DISPLAY_VER" | sed 's/.*-r//')
-          V_CODE=$(date +%Y%m%d)$MOD_REV
+          # [加固] 如果 grep 没找到数字，默认给个 0，防止脚本崩溃
+          CLEAN_REV=$(echo "$MOD_REV" | grep -oE '^[0-9]+' || echo "0")
+          V_CODE=$(date +%Y%m%d)$CLEAN_REV
 
           # 3. 注入模板 (不触碰其他任何行)
           sed -i "s/\${DISPLAY_VER}/$DISPLAY_VER/" module.prop
           sed -i "s/\${V_CODE}/$V_CODE/" module.prop
 
-          # [修复] 只有在非 Dispatch 事件时，才去切 CHANGELOG
+          # 5. 生成 Release Body
           if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
               echo "### 🚀 上游配置变更" > release_body.txt
               echo "${{ env.UPSTREAM_MSG }}" >> release_body.txt
           else
-              # 4. 提取当前版本的 Changelog 用于 GitHub Release 页面
               VERSION_ESCAPED=$(echo "$DISPLAY_VER" | sed 's/\./\\./g')
               sed -n "/## $VERSION_ESCAPED/,/## /p" CHANGELOG.md | sed '$d' > release_body.txt
           fi
-      - name: Create Module Package
+
+          # [修复] 使用 if 语句替代 && 简写，防止因文件非空导致 exit code 1
+          if [ ! -s release_body.txt ]; then
+            echo "Build from main branch commit: ${{ github.sha }}" > release_body.txt
+          fi
+
+      # [新增步骤] 自动向 CHANGELOG.md 头部追加日志
+      - name: Update CHANGELOG File
+        if: github.event_name == 'repository_dispatch'
         run: |
-          # 1. 物理锁死带版本号的文件名
+          # 构造新的日志条目
+          # 格式：
+          # ## v1.12.14-r16-cfg1034
+          # 
+          # - 🚀 上游配置变更: feat: xxxx
+
+          NEW_ENTRY="## ${{ env.DISPLAY_VER }}\n\n- 🚀 上游配置变更: ${{ env.UPSTREAM_MSG }}\n"
+
+          # 将新内容和旧内容拼接
+          echo -e "$NEW_ENTRY" | cat - CHANGELOG.md > temp_changelog.md
+          mv temp_changelog.md CHANGELOG.md
+
+          # 此时 CHANGELOG.md 已经更新，后续打包会把最新的日志打进去
+
+      - name: Create Package
+        run: |
           ZIP_NAME="sing-box-ksu-module-${{ env.DISPLAY_VER }}.zip"
-
-          # 2. 打包 (保持 -ry 软链指针)
-          zip -ry "$ZIP_NAME" bin etc system customize.sh service.sh module.prop update.json LICENSE CHANGELOG.md README.md .env.example config.template.json
-
-          # 3. 传导路径给 Release 步骤
+          # 这里的 CHANGELOG.md 已经是更新过的了
+          zip -ry "$ZIP_NAME" bin system customize.sh service.sh module.prop LICENSE CHANGELOG.md README.md .env.example config.template.json
           echo "ZIP_PATH=$ZIP_NAME" >> $GITHUB_ENV
 
       - name: Release Module
@@ -126,7 +150,10 @@ jobs:
 
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add update.json
-          # [防线2] 加上 [skip ci] 确保万无一失
+
+          # [修改] 同时添加 CHANGELOG.md
+          git add update.json CHANGELOG.md
+
+          # 提交 (带 skip ci 防止死循环)
           git commit -m "chore: auto-update metadata for ${{ env.DISPLAY_VER }} [skip ci]" || exit 0
           git push origin main
