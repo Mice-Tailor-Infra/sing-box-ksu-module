@@ -3,7 +3,6 @@
 
 WORKSPACE="/data/adb/sing-box-workspace"
 BIN="$WORKSPACE/bin/sing-box"
-# 这里改名为 PATH，更符合它作为绝对路径的身份
 SERVICE_PATH="/data/adb/modules/sing-box-ksu-module/service.sh"
 LOG_FILE="$WORKSPACE/var/log/sing-box.log"
 TEMPLATE_URL="https://raw.githubusercontent.com/cagedbird043/sing-box-config-templates/mobile/config.template.json"
@@ -14,36 +13,50 @@ case "$1" in
             echo "Sing-box 已经在运行中。"
         else
             echo "正在启动 Sing-box (守护模式)..."
-            # 使用绝对路径，确保在任何目录下执行都能命中目标
             nohup sh "$SERVICE_PATH" > /dev/null 2>&1 &
             echo "启动指令已发送。"
         fi
         ;;
     stop)
-        echo "正在执行暴力停机..."
+        echo "正在停止 Sing-box..."
         
-        # 1. 找到二进制进程的 PID
+        # 1. 锁定核心进程
         PID=$(pgrep -f "$BIN")
         
         if [ ! -z "$PID" ]; then
-            # 2. 找到它的父进程 (PPid)
-            # ps -o ppid= 会直接输出父进程号
+            # 2. 处决父进程 (断绝复活)
+            # 必须先杀父进程，否则杀完子进程，父进程会在毫秒级内把它拉起来
             PPID=$(ps -o ppid= -p "$PID" | tr -d ' ')
             
             # 3. 优先杀掉父进程 (service.sh)，切断重试循环
             if [ ! -z "$PPID" ]; then
-                kill -9 "$PPID" >/dev/null 2>&1 || true
+                # 对父进程脚本，用 -15 或 -9 均可，重点是让它停止循环
+                kill -15 "$PPID" >/dev/null 2>&1 || true
             fi
             
-            # 4. 补刀杀掉二进制进程
-            kill -9 "$PID" >/dev/null 2>&1 || true
+            # 3. 优雅处决子进程 (触发原生清理)
+            # 这是解决 VoLTE 黑屏的核心：SIGTERM 唤醒 sing-box 的 OnClose 清理
+            kill -15 "$PID" >/dev/null 2>&1
+            
+            # 4. 给予清理窗口期 (Wait Logic)
+            echo "等待专业清理..."
+            count=0
+            while kill -0 "$PID" >/dev/null 2>&1; do
+                sleep 1
+                count=$((count + 1))
+                # 给他 10 秒时间清理，如果卡死才强制杀
+                if [ $count -gt 10 ]; then
+                    echo "⚠️ 进程未响应清理信号，执行强制击杀..."
+                    kill -9 "$PID" >/dev/null 2>&1 || true
+                    break
+                fi
+            done
         fi
-
-        # 2. 彻底清理：使用绝对路径作为特征码，杀掉所有残留的 service.sh 实例
-        # 这样比刚才的 relative fragment 更安全，不会误杀其他 service.sh
-        pkill -9 -f "$SERVICE_PATH" >/dev/null 2>&1 || true
         
-        echo "✅ 所有相关进程已强制清除。"
+        # 补刀：防止有多个 service.sh 实例
+        pkill -15 -f "$SERVICE_PATH" >/dev/null 2>&1 || true
+        
+        echo "✅ 服务已停止 (Native Cleanup)。"
         ;;
     restart)
         $0 stop
@@ -52,10 +65,8 @@ case "$1" in
         ;;
     update)
         echo "正在从云端同步配置模板..."
-        # 使用临时文件下载，防止下载失败把本地模板搞丢了
         TEMP_TMPL="$WORKSPACE/config.template.json.tmp"
         if curl -fL -o "$TEMP_TMPL" "$TEMPLATE_URL"; then
-            # 基础校验：如果是 404 或者空文件，grep 会失败
             if grep -q "{" "$TEMP_TMPL"; then
                 mv -f "$TEMP_TMPL" "$WORKSPACE/config.template.json"
                 chmod 644 "$WORKSPACE/config.template.json"

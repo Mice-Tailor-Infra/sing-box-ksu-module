@@ -9,10 +9,10 @@ ui_print "--------------------------------------"
 
 # 1. 执行热停机 (内联逻辑，拒绝调用外部脚本以防自杀)
 ui_print "- 正在执行服务停机..."
-# 精准匹配二进制路径，防止误杀安装器
-pkill -9 -f "$WORKSPACE/bin/sing-box" >/dev/null 2>&1 || true
 # 精准匹配服务脚本路径
-pkill -9 -f "modules/sing-box-ksu-module/service.sh" >/dev/null 2>&1 || true
+pkill -15 -f "modules/sing-box-ksu-module/service.sh" >/dev/null 2>&1 || true
+# 精准匹配二进制路径，防止误杀安装器
+pkill -15 -f "$WORKSPACE/bin/sing-box" >/dev/null 2>&1 || true
 
 # 2. 物理地基翻新
 ui_print "- 正在部署 Unix-like 工作空间..."
