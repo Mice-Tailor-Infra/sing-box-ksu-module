@@ -1,0 +1,19 @@
+# Mice Sing-box Module - Pages Configuration
+title: Sing-box for KernelSU
+description: Unified sing-box core runtime with envsubst rendering.
+theme: jekyll-theme-primer
+
+exclude:
+  - bin
+  - system
+  - etc
+  - .github
+  - customize.sh
+  - service.sh
+  - .env.example
+  - LICENSE
+
+include:
+  - update.json
+  - CHANGELOG.md
+  - README.md
