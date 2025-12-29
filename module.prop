@@ -3,5 +3,5 @@ name=Sing-box for KernelSU
 version=${DISPLAY_VER}
 versionCode=${V_CODE}
 author=cagedbird043
-description=Unified sing-box workspace with envsubst rendering. Includes system-wide envsubst tool.
+description=Unified sing-box core runtime. Logic managed via Repo B (EdgeOne CDN). Use 'sbc update' to sync.
 updateJson=https://miceworld.top/sing-box-ksu-module/update.json

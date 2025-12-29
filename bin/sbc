@@ -3,9 +3,13 @@
 
 WORKSPACE="/data/adb/sing-box-workspace"
 BIN="$WORKSPACE/bin/sing-box"
+ENV_FILE="$WORKSPACE/.env"
+TEMPLATE="$WORKSPACE/config.template.json"
+CONFFILE="$WORKSPACE/etc/config.json"
 SERVICE_PATH="/data/adb/modules/sing-box-ksu-module/service.sh"
 LOG_FILE="$WORKSPACE/var/log/sing-box.log"
-TEMPLATE_URL="https://raw.githubusercontent.com/cagedbird043/sing-box-config-templates/mobile/config.template.json"
+# 指挥线：锁定 EdgeOne CDN 上的 mobile 专项分支
+TEMPLATE_URL="https://miceworld.top/sing-box-config-templates/mobile/config.template.json"
 
 case "$1" in
     start)
@@ -19,43 +23,22 @@ case "$1" in
         ;;
     stop)
         echo "正在停止 Sing-box..."
-        
-        # 1. 锁定核心进程
         PID=$(pgrep -f "$BIN")
-        
         if [ ! -z "$PID" ]; then
-            # 2. 处决父进程 (断绝复活)
-            # 必须先杀父进程，否则杀完子进程，父进程会在毫秒级内把它拉起来
             PPID=$(ps -o ppid= -p "$PID" | tr -d ' ')
-            
-            # 3. 优先杀掉父进程 (service.sh)，切断重试循环
             if [ ! -z "$PPID" ]; then
-                # 对父进程脚本，用 -15 或 -9 均可，重点是让它停止循环
                 kill -15 "$PPID" >/dev/null 2>&1 || true
             fi
-            
-            # 3. 优雅处决子进程 (触发原生清理)
-            # 这是解决 VoLTE 黑屏的核心：SIGTERM 唤醒 sing-box 的 OnClose 清理
             kill -15 "$PID" >/dev/null 2>&1
-            
-            # 4. 给予清理窗口期 (Wait Logic)
-            echo "等待专业清理..."
+            echo "等待专业清理 (VoLTE 保护期)..."
             count=0
-            while kill -0 "$PID" >/dev/null 2>&1; do
+            while kill -0 "$PID" 2>/dev/null && [ $count -lt 10 ]; do
                 sleep 1
                 count=$((count + 1))
-                # 给他 10 秒时间清理，如果卡死才强制杀
-                if [ $count -gt 10 ]; then
-                    echo "⚠️ 进程未响应清理信号，执行强制击杀..."
-                    kill -9 "$PID" >/dev/null 2>&1 || true
-                    break
-                fi
             done
+            [ $count -ge 10 ] && kill -9 "$PID" || true
         fi
-        
-        # 补刀：防止有多个 service.sh 实例
         pkill -15 -f "$SERVICE_PATH" >/dev/null 2>&1 || true
-        
         echo "✅ 服务已停止 (Native Cleanup)。"
         ;;
     restart)
@@ -64,20 +47,25 @@ case "$1" in
         $0 start
         ;;
     update)
-        echo "正在从云端同步配置模板..."
-        TEMP_TMPL="$WORKSPACE/config.template.json.tmp"
-        if curl -fL -o "$TEMP_TMPL" "$TEMPLATE_URL"; then
-            if grep -q "{" "$TEMP_TMPL"; then
-                mv -f "$TEMP_TMPL" "$WORKSPACE/config.template.json"
-                chmod 644 "$WORKSPACE/config.template.json"
-                echo "✅ 模板同步成功！执行重启以应用更改..."
-                $0 restart
+        echo "📡 正在通过 EdgeOne 同步指挥部配置..."
+        if curl -fL -o "$TEMPLATE.tmp" "$TEMPLATE_URL"; then
+            if grep -q "inbounds" "$TEMPLATE.tmp"; then
+                mv -f "$TEMPLATE.tmp" "$TEMPLATE"
+                echo "✅ 逻辑同步成功。正在唤醒本地渲染引擎..."
+                if [ -f "$ENV_FILE" ]; then
+                    set -a; . "$ENV_FILE"; set +a
+                    "$WORKSPACE/bin/envsubst" < "$TEMPLATE" > "$CONFFILE"
+                    echo "🚀 渲染完成，执行重启..."
+                    $0 restart
+                else
+                    echo "⚠️ 未发现 .env 凭证，请先配置本地变量。"
+                fi
             else
-                echo "❌ 错误：抓取到的文件内容异常。"
-                rm -f "$TEMP_TMPL"
+                echo "❌ 校验失败：内容异常。"
+                rm -f "$TEMPLATE.tmp"
             fi
         else
-            echo "❌ 错误：无法连接到 GitHub Raw，请检查网络。"
+            echo "❌ 连接 miceworld.top 失败。"
         fi
         ;;
     status)
