@@ -46,18 +46,23 @@ case "$1" in
         $0 start
         ;;
     update)
-        echo "📡 正在通过 EdgeOne 同步指挥部配置..."
-        if curl -fL -o "$TEMPLATE.tmp" "$TEMPLATE_URL"; then
+        echo "📡 正在通过 EdgeOne 连接 miceworld 指挥部..."
+        
+        # === 生成时间戳后缀 (例如 ?t=1735616520) ===
+        CACHE_BUSTER="?t=$(date +%s)"
+        
+        # 在 URL 后面拼接后缀，强制穿透 CDN 缓存
+        if curl -fL -o "$TEMPLATE.tmp" "${TEMPLATE_URL}${CACHE_BUSTER}"; then
             if grep -q "inbounds" "$TEMPLATE.tmp"; then
-                mv -f "$TEMPLATE.tmp" "$TEMPLATE"
-                echo "✅ 逻辑同步成功。正在唤醒本地渲染引擎..."
+                mv "$TEMPLATE.tmp" "$TEMPLATE"
+                echo "✅ 逻辑同步成功 (已穿透缓存)。正在唤醒本地渲染引擎..."
                 if [ -f "$ENV_FILE" ]; then
                     set -a; . "$ENV_FILE"; set +a
                     "$WORKSPACE/bin/envsubst" < "$TEMPLATE" > "$CONFFILE"
-                    echo "🚀 渲染完成，执行重启..."
+                    echo "🚀 渲染完成，执行热重载 (Hot Reload)..."
                     $0 restart
                 else
-                    echo "⚠️ 未发现 .env 凭证，请先配置本地变量。"
+                    echo "⚠️ 警告：未发现 .env 凭证，无法完成渲染。"
                 fi
             else
                 echo "❌ 校验失败：内容异常。"
