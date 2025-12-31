@@ -73,18 +73,6 @@ jobs:
 
           rm -rf temp_sb sb.tar.gz
 
-      - name: Fetch Default Config (Mobile)
-        run: |
-          echo "📥 Grabbing latest mobile config from EdgeOne..."
-          # 强制带时间戳穿透缓存，确保打进包里的是最新版
-          curl -fL -o config.template.json "https://miceworld.top/sing-box-config-templates/mobile/config.template.json?t=$(date +%s)"
-
-          # 简单校验一下，防止下歪了
-          if ! grep -q "inbounds" config.template.json; then
-            echo "❌ Error: Downloaded config is invalid!"
-            exit 1
-          fi
-
       - name: Prepare Module Metadata
         run: |
           BASE_VER=$(grep -m 1 "^## " CHANGELOG.md | sed 's/## //')
@@ -97,7 +85,8 @@ jobs:
       - name: Pack and Release
         run: |
           ZIP_NAME="sing-box-ksu-module-${{ env.VERSION }}.zip"
-          zip -ry "$ZIP_NAME" bin system customize.sh service.sh module.prop LICENSE CHANGELOG.md README.md .env.example config.template.json
+          # 只打包核心文件，排除文本文档和示例配置（云端管理）
+          zip -ry "$ZIP_NAME" bin/ system/ customize.sh service.sh module.prop README.md
           echo "ZIP_PATH=$ZIP_NAME" >> $GITHUB_ENV
 
       - name: Publish to GitHub Releases

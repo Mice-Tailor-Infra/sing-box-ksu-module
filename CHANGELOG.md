@@ -1,3 +1,12 @@
+## v1.12.14-r21
+
+- **架构级重构**：消除文件冗余，实现云端配置同步
+- **二进制归一化**：所有二进制物理移动到 `/data/adb/sing-box-workspace/bin/`，`$MODPATH/bin` 安装后为空
+- **系统级软链化**：在 `$MODPATH/system/bin/` 建立指向 Workspace 的软链接 (sbc, envsubst, sing-box)
+- **构建瘦身**：ZIP 包不再包含 config.template.json、CHANGELOG.md、LICENSE、.env.example
+- **云端同步**：安装时从 `miceworld.top` 动态拉取配置模板和 .env 示例
+- **鲁棒性增强**：网络请求使用 `-k` 忽略证书问题，设置超时防止安装卡死
+
 ## v1.12.14-r20
 
 - **基建升级**：实现了缓存穿透机制，提升了配置同步的可靠性。
