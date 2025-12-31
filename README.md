@@ -129,7 +129,7 @@ tail -n 100 /data/adb/sing-box-workspace/var/log/sing-box.log
 
 | 组件 | 仓库 | 用途 |
 |------|------|------|
-| 核心二进制 | [sing-box-auto-build-ci](https://github.com/cagedbird043/sing-box-auto-build-ci) | 自动构建 android-arm64 二进制 |
+| 自动构建 CI | [sing-box-auto-build-ci](https://github.com/cagedbird043/sing-box-auto-build-ci) | 多平台/架构自动构建流水线 |
 | 配置模板 | [sing-box-config-templates](https://github.com/cagedbird043/sing-box-config-templates) | 移动端分流规则模板 |
 | CDN 加速 | [miceworld.top](https://miceworld.top) | 全球加速分发 |
 
@@ -139,5 +139,6 @@ tail -n 100 /data/adb/sing-box-workspace/var/log/sing-box.log
 
 ## 🙏 致谢
 
-- [Sing-box](https://github.com/SagerNet/sing-box) - 强大的代理客户端
+- [Sing-box](https://github.com/SagerNet/sing-box) - 强大的代理客户端核心
+- [reF1nd/sing-box](https://github.com/reF1nd/sing-box) - 关键的 Android 适配分支，本项目所有功能的基础
 - [KernelSU](https://github.com/KernelSU/KernelSU) - Android root 解决方案
