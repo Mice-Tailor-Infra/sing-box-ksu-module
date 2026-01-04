@@ -108,8 +108,8 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "actions@github.com"
 
-          # 3. 把 module.prop 也加进去！
-          git add update.json module.prop
+          # 3. 只提交 update.json，不要提交 module.prop (保持占位符)
+          git add update.json
 
           # 4. 智能提交：只有检测到变动才 commit，防止报错
           git diff-index --quiet HEAD || (git commit -m "chore: release ${{ env.VERSION }} [skip ci]" && git push)
