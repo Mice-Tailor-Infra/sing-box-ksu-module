@@ -81,6 +81,8 @@ jobs:
           V_CODE=$(date +%Y%m%d%H)
           sed -i "s/\${DISPLAY_VER}/$BASE_VER/" module.prop
           sed -i "s/\${V_CODE}/$V_CODE/" module.prop
+          # Add timestamp to module.prop updateJson
+          sed -i "s|update.json|update.json?t=$V_CODE|" module.prop
           echo "VERSION=$BASE_VER" >> $GITHUB_ENV
 
       - name: Pack and Release
@@ -100,7 +102,7 @@ jobs:
       - name: Update OTA Metadata
         run: |
           # 1. 更新 update.json
-          jq ".version = \"${{ env.VERSION }}\" | .versionCode = $(date +%Y%m%d%H) | .zipUrl = \"https://github.com/${{ github.repository }}/releases/latest/download/${{ env.ZIP_PATH }}\"" update.json > tmp.json && mv tmp.json update.json
+          jq ".version = \"${{ env.VERSION }}\" | .versionCode = $(date +%Y%m%d%H) | .zipUrl = \"https://ghfast.top/https://github.com/${{ github.repository }}/releases/latest/download/${{ env.ZIP_PATH }}\" | .changelog = \"https://miceworld.top/sing-box-ksu-module/CHANGELOG.md?t=$(date +%Y%m%d%H)\"" update.json > tmp.json && mv tmp.json update.json
 
           # 2. 配置 Git 身份
           git config --global user.name "github-actions[bot]"
