@@ -28,13 +28,8 @@ ui_print "    ✅ 服务已停止"
 # ============================================
 ui_print ""
 ui_print ">>> Step 2: 正在创建工作空间..."
-mkdir -p "$WORKSPACE/bin" "$WORKSPACE/etc" "$WORKSPACE/var/lib/sing-box" "$WORKSPACE/var/run" "$WORKSPACE/var/log"
+mkdir -p "$WORKSPACE/bin" "$WORKSPACE/etc" "$WORKSPACE/var/lib" "$WORKSPACE/var/run" "$WORKSPACE/var/log"
 ui_print "    ✅ 目录结构创建完成"
-
-# 移动 Dashboard 到指定数据目录（配合 sbc-rs -D 参数）
-if [ -d "$WORKSPACE/zashboard" ]; then
-    mv "$WORKSPACE/zashboard" "$WORKSPACE/var/lib/sing-box/" 2>/dev/null || true
-fi
 
 # ============================================
 # Step 3: 二进制归一化（移动而非复制）

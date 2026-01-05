@@ -8,10 +8,23 @@ use handlers::{render, update, daemon};
 
 fn main() -> Result<()> {
     // Initialize Logger (Default to INFO)
+    // Initialize Logger with Local Time
     if std::env::var("RUST_LOG").is_err() {
         unsafe { std::env::set_var("RUST_LOG", "info"); }
     }
-    env_logger::init();
+    
+    use std::io::Write;
+    env_logger::Builder::from_default_env()
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "[{} {}] {}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
+        .init();
 
     let cli = Cli::parse();
 
