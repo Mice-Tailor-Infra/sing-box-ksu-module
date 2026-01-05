@@ -68,7 +68,6 @@ mkdir -p "$MODPATH/system/bin"
 
 # 创建软链接（源路径 -> 目标路径）
 ln -sf "$WORKSPACE/bin/sbc" "$MODPATH/system/bin/sbc" && ui_print "    🔗 sbc -> Workspace"
-ln -sf "$WORKSPACE/bin/envsubst" "$MODPATH/system/bin/envsubst" && ui_print "    🔗 envsubst -> Workspace"
 ln -sf "$WORKSPACE/bin/sing-box" "$MODPATH/system/bin/sing-box" && ui_print "    🔗 sing-box -> Workspace"
 
 ui_print "    ✅ 软链接建立完成"
@@ -82,19 +81,26 @@ ui_print ">>> Step 5: 正在同步云端配置..."
 TIMESTAMP=$(date +%s)
 DOWNLOAD_URL="${CONFIG_URL}?t=${TIMESTAMP}"
 
-# 使用 curl -k 忽略证书问题，设置超时 10 秒
-if curl -kfsSL --connect-timeout 10 --max-time 30 "$DOWNLOAD_URL" -o "$WORKSPACE/config.template.json" 2>/dev/null; then
-    # 简单校验
-    if grep -q "inbounds" "$WORKSPACE/config.template.json" 2>/dev/null; then
-        chmod 644 "$WORKSPACE/config.template.json"
-        ui_print "    ✅ 配置同步成功"
-    else
-        ui_print "    ⚠️  下载的配置无效，将保留现有配置"
-        rm -f "$WORKSPACE/config.template.json"
-    fi
+# 优先使用压缩包内自带的 config.template.json (本地测试模式)
+if [ -f "$MODPATH/config.template.json" ]; then
+    cp -f "$MODPATH/config.template.json" "$WORKSPACE/config.template.json"
+    chmod 644 "$WORKSPACE/config.template.json"
+    ui_print "    ✅ 已使用本地配置模板 (Local Override)"
 else
-    ui_print "    ⚠️  网络连接失败或下载超时"
-    ui_print "    💡 提示: 请确保网络通畅后运行 'sbc update' 手动同步"
+    # 使用 curl -k 忽略证书问题，设置超时 10 秒
+    if curl -kfsSL --connect-timeout 10 --max-time 30 "$DOWNLOAD_URL" -o "$WORKSPACE/config.template.json" 2>/dev/null; then
+        # 简单校验
+        if grep -q "inbounds" "$WORKSPACE/config.template.json" 2>/dev/null; then
+            chmod 644 "$WORKSPACE/config.template.json"
+            ui_print "    ✅ 配置同步成功"
+        else
+            ui_print "    ⚠️  下载的配置无效，将保留现有配置"
+            rm -f "$WORKSPACE/config.template.json"
+        fi
+    else
+        ui_print "    ⚠️  网络连接失败或下载超时"
+        ui_print "    💡 提示: 请确保网络通畅后运行 'sbc update' 手动同步"
+    fi
 fi
 
 # ============================================
@@ -104,8 +110,12 @@ ui_print ""
 ui_print ">>> Step 6: 正在初始化环境变量..."
 
 if [ ! -f "$WORKSPACE/.env" ]; then
-    # 优先从云端下载 .env 模板
-    if curl -kfsSL --connect-timeout 10 --max-time 30 "${ENV_URL}?t=${TIMESTAMP}" -o "$WORKSPACE/.env" 2>/dev/null; then
+    # 优先使用压缩包内自带的 .env (本地测试模式)
+    if [ -f "$MODPATH/.env" ]; then
+        cp -f "$MODPATH/.env" "$WORKSPACE/.env"
+        chmod 600 "$WORKSPACE/.env"
+        ui_print "    ✅ 已使用本地 .env 模板 (Local Override)"
+    elif curl -kfsSL --connect-timeout 10 --max-time 30 "${ENV_URL}?t=${TIMESTAMP}" -o "$WORKSPACE/.env" 2>/dev/null; then
         chmod 600 "$WORKSPACE/.env"
         ui_print "    ✅ .env 模板已从云端拉取"
     else
