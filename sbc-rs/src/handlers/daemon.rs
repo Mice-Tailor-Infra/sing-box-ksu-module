@@ -108,7 +108,12 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Resul
     // 4. Supervisor Loop (Blocking Wait)
     // child is NOT MOVED because we used child_pid in closure
     match child.wait() {
-        Ok(status) => info!("sing-box exited with: {}", status),
+        Ok(status) => {
+            if !status.success() {
+                 anyhow::bail!("sing-box exited with error: {}", status);
+            }
+            info!("sing-box exited with: {}", status);
+        },
         Err(e) => error!("Error waiting for sing-box: {}", e),
     }
 
