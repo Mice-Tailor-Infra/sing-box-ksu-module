@@ -25,7 +25,7 @@ fn get_workspace_path(config_path: &PathBuf) -> PathBuf {
 }
 
 fn get_pid_file_path(workspace: &PathBuf) -> PathBuf {
-    env::var("SBC_PID_FILE").map(PathBuf::from).unwrap_or_else(|_| workspace.join("run/sing-box.pid"))
+    env::var("SBC_PID_FILE").map(PathBuf::from).unwrap_or_else(|_| workspace.join("var/run/sing-box.pid"))
 }
 
 // 简单的 .env 加载器
