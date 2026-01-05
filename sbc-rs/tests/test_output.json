@@ -1,0 +1,27 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "dns": {
+    "servers": [
+      "8.8.8.8",
+      "1.1.1.1",
+      "9.9.9.9"
+    ]
+  },
+  "extra": "{{MISSING_VAR}}",
+  "mixed": [
+    {
+      "type": "http",
+      "users": [
+        {
+          "user": "admin",
+          "pass": "123"
+        }
+      ]
+    }
+  ],
+  "struct_val": {
+    "foo": "bar"
+  }
+}
