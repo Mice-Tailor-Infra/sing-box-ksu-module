@@ -23,6 +23,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build sbc-rs (Android)
+        run: |
+          cd sbc-rs
+          cross build --release --target aarch64-linux-android
+          echo "✅ Build complete"
+
+      - name: Move sbc-rs to bin
+        run: |
+          mkdir -p bin
+          mv sbc-rs/target/aarch64-linux-android/release/sbc-rs bin/
+          chmod +x bin/sbc-rs
+          ls -lh bin/sbc-rs
+
       - name: Fetch Latest Core
         env:
           # 显式引用 Token，确保有权限调用 API

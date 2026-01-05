@@ -10,3 +10,9 @@ clap = { version = "4.0", features = ["derive"] }
 anyhow = "1.0"
 ureq = { version = "2.0", features = ["json", "tls"] }
 nix = { version = "0.27", features = ["signal", "process"] }
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
