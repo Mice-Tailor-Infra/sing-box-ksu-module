@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use log::{warn, info};
 
 pub fn handle_render(template: PathBuf, output: PathBuf) -> Result<()> {
     // 1. Gather Environment Variables
@@ -58,7 +59,7 @@ fn process_value(v: Value, env: &HashMap<String, String>) -> Result<Value> {
                                 new_arr.push(process_value(parsed_val, env)?);
                             }
                         } else {
-                            eprintln!("Warning: Placeholder {{{{{}}}}} in array not found/empty, skipping specific item.", var_name);
+                            warn!("Placeholder {{{{{}}}}} in array not found/empty, skipping specific item.", var_name);
                         }
                         continue;
                     }
@@ -74,7 +75,7 @@ fn process_value(v: Value, env: &HashMap<String, String>) -> Result<Value> {
                 if let Some(parsed_val) = resolve_env_var(var_name, env)? {
                     return process_value(parsed_val, env);
                 } else {
-                    eprintln!("Warning: Placeholder {{{{{}}}}} in value not found/empty, keeping original.", var_name);
+                    warn!("Placeholder {{{{{}}}}} in value not found/empty, keeping original.", var_name);
                     return Ok(Value::String(s));
                 }
             }
@@ -143,7 +144,7 @@ fn interpolate_string(s: &str, env: &HashMap<String, String>) -> String {
                     // User said "Legacy shell constructs", usually envsubst replaces with empty.
                     // Let's replace with empty for robust cleanup.
                     // BUT: Maybe warn?
-                    eprintln!("Warning: Variable ${{{}}} not found, replacing with empty string.", var_name);
+                    warn!("Variable ${{{}}} not found, replacing with empty string.", var_name);
                     result.replace_range(abs_start..=abs_end, "");
                     search_start = abs_start;
                 }
