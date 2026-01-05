@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
-use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use log::{info, warn, error};
@@ -17,7 +16,35 @@ fn get_pid_file_path() -> PathBuf {
     env::var("SBC_PID_FILE").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/data/adb/sing-box-workspace/run/sing-box.pid"))
 }
 
+// Simple .env loader to avoid extra dependencies
+fn load_env_file(path: &PathBuf) -> Result<()> {
+    if !path.exists() { return Ok(()); }
+    let content = fs::read_to_string(path)?;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') { continue; }
+        if let Some((k, v)) = line.split_once('=') {
+            // Remove quotes if present
+            let clean_v = v.trim().trim_matches('"').trim_matches('\'');
+            unsafe { env::set_var(k.trim(), clean_v); }
+        }
+    }
+    Ok(())
+}
+
 pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Result<()> {
+    // 0. Load Env (Restoring functionality lost from service.sh)
+    // Assuming .env is in WORKSPACE (parent of config_path which is etc/config.json -> workspace/etc/config.json? No.)
+    // WORKSPACE is usually /data/adb/sing-box-workspace
+    // config_path passed from CLI is usually absolute.
+    // Let's deduce workspace or just fail-safe to known paths?
+    // service.sh passes full path.
+    // Let's hardcode the search for .env in /data/adb/sing-box-workspace since this is a tailored module.
+    let env_path = PathBuf::from("/data/adb/sing-box-workspace/.env");
+    if let Err(e) = load_env_file(&env_path) {
+        warn!("⚠️ Failed to load .env file: {}", e);
+    }
+
     info!("🚀 Starting sing-box supervisor...");
     
     // 0. Auto-Render (if requested)
@@ -58,6 +85,9 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Resul
     // 3. Setup Signal Handling
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
+    
+    // Extract PID for the closure to avoid moving 'child'
+    let child_pid = pid;
 
     // Use ctrlc to trap SIGINT/SIGTERM and forward to child
     ctrlc::set_handler(move || {
@@ -67,8 +97,8 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Resul
         r.store(false, Ordering::SeqCst);
         
         info!("🛑 Received termination signal, shutting down child...");
-        // Retrieve PID (unsafe due to FFI, but standard for Pid::from_raw)
-        let pid = Pid::from_raw(child.id() as i32);
+        // Retrieve PID (copy from captured variable)
+        let pid = Pid::from_raw(child_pid as i32);
         match signal::kill(pid, Signal::SIGTERM) {
              Ok(_) => info!("Sent SIGTERM to child process"),
              Err(e) => error!("Failed to forward signal to child: {}", e),
@@ -76,25 +106,7 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Resul
     }).context("Error setting Ctrl-C handler")?;
 
     // 4. Supervisor Loop (Blocking Wait)
-    // We cannot just child.wait() because we might need to do other things, 
-    // but child.wait() is good enough for a simple supervisor.
-    // Note: child (variable) moved into closure? No, we need separate logic.
-    // Rust ownership is tricky here with the closure capturing `child`.
-    // Actually, ctrlc handler needs `child` to kill it? 
-    // The previous code didn't clone child. 
-    // Pid-based kill is safer for the closure (Copy trait).
-    
-    // Correction: We entered the closure logic above but `child` cannot be moved if we wait on it below.
-    // Strategy: Store PID in closure, kill by PID. Wait on `child` object in main thread.
-    
-    // Re-writing the closure clearly without using `child` object directly.
-    let child_pid = child.id() as i32;
-    ctrlc::set_handler(move || {
-        info!("🛑 Received termination signal (Supervisor)...");
-        let pid = Pid::from_raw(child_pid);
-        let _ = signal::kill(pid, Signal::SIGTERM);
-    })?;
-
+    // child is NOT MOVED because we used child_pid in closure
     match child.wait() {
         Ok(status) => info!("sing-box exited with: {}", status),
         Err(e) => error!("Error waiting for sing-box: {}", e),

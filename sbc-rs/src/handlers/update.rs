@@ -2,7 +2,7 @@ use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::PathBuf;
 use std::time::SystemTime;
-use log::{info, warn, error};
+use log::{info, error};
 
 pub fn handle_update(
     template_url: String,
