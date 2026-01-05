@@ -82,11 +82,25 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>, working_
     }
 
     use std::os::unix::process::CommandExt;
-    let mut child_cmd = Command::new("sing-box");
+    
+    // 尝试在 sbc-rs 同级目录下找到 sing-box
+    let mut singbox_bin = "sing-box".to_string();
+    if let Ok(exe_path) = env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            let sibling = parent.join("sing-box");
+            if sibling.exists() {
+                singbox_bin = sibling.to_string_lossy().to_string();
+            }
+        }
+    }
+
+    let mut child_cmd = Command::new(&singbox_bin);
     child_cmd.arg("run")
         .arg("-c")
         .arg(&config_path)
-        .current_dir(&final_wd); // 所有配置中的相对路径都将相对于此目录解析
+        .arg("-D")
+        .arg(&final_wd)
+        .current_dir(&final_wd); // 作为双重保险，同时设置 CWD
 
     unsafe {
         child_cmd.pre_exec(|| {
@@ -96,6 +110,7 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>, working_
         });
     }
 
+    info!("🚀 执行指令: {} run -c {:?} -D {:?}", singbox_bin, config_path, final_wd);
     let mut child = child_cmd.spawn()
         .context("启动 sing-box 进程失败")?;
 
