@@ -11,9 +11,12 @@ LOG_FILE="$WORKSPACE/var/log/sing-box.log"
 TEMPLATE_URL="https://miceworld.top/sing-box-config-templates/mobile/config.template.json"
 ENV_EXAMPLE="$WORKSPACE/.env.example"
 ENV_EXAMPLE_URL="https://miceworld.top/sing-box-config-templates/mobile/.env.example"
+STOP_FLAG="$WORKSPACE/STOP"
 
 case "$1" in
     start)
+        # 清除停止标志，允许守护进程运行
+        rm -f "$STOP_FLAG"
         if pgrep -f "$BIN" > /dev/null; then
             echo "Sing-box 已经在运行中。"
         else
@@ -24,6 +27,8 @@ case "$1" in
         ;;
     stop)
         echo "正在停止 Sing-box..."
+        # 设置停止标志，防止 service.sh 自动重启
+        touch "$STOP_FLAG"
         PID=$(pgrep -f "$BIN")
         if [ ! -z "$PID" ]; then
             PPID=$(ps -o ppid= -p "$PID" | tr -d ' ')

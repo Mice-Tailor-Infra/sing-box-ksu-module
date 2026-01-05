@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
-use std::sync::atomic::AtomicBool;
+use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use log::{info, warn, error};
 
@@ -55,10 +56,45 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Resul
     fs::write(&pid_file, pid.to_string())?;
 
     // 3. Setup Signal Handling
-    let _running = Arc::new(AtomicBool::new(true));
-    // let r = _running.clone(); // Unused
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
 
-    // ... signal handling logic ...
+    // Use ctrlc to trap SIGINT/SIGTERM and forward to child
+    ctrlc::set_handler(move || {
+        if !r.load(Ordering::SeqCst) {
+             return; // Already handling
+        }
+        r.store(false, Ordering::SeqCst);
+        
+        info!("🛑 Received termination signal, shutting down child...");
+        // Retrieve PID (unsafe due to FFI, but standard for Pid::from_raw)
+        let pid = Pid::from_raw(child.id() as i32);
+        match signal::kill(pid, Signal::SIGTERM) {
+             Ok(_) => info!("Sent SIGTERM to child process"),
+             Err(e) => error!("Failed to forward signal to child: {}", e),
+        }
+    }).context("Error setting Ctrl-C handler")?;
+
+    // 4. Supervisor Loop (Blocking Wait)
+    // We cannot just child.wait() because we might need to do other things, 
+    // but child.wait() is good enough for a simple supervisor.
+    // Note: child (variable) moved into closure? No, we need separate logic.
+    // Rust ownership is tricky here with the closure capturing `child`.
+    // Actually, ctrlc handler needs `child` to kill it? 
+    // The previous code didn't clone child. 
+    // Pid-based kill is safer for the closure (Copy trait).
+    
+    // Correction: We entered the closure logic above but `child` cannot be moved if we wait on it below.
+    // Strategy: Store PID in closure, kill by PID. Wait on `child` object in main thread.
+    
+    // Re-writing the closure clearly without using `child` object directly.
+    let child_pid = child.id() as i32;
+    ctrlc::set_handler(move || {
+        info!("🛑 Received termination signal (Supervisor)...");
+        let pid = Pid::from_raw(child_pid);
+        let _ = signal::kill(pid, Signal::SIGTERM);
+    })?;
+
     match child.wait() {
         Ok(status) => info!("sing-box exited with: {}", status),
         Err(e) => error!("Error waiting for sing-box: {}", e),
