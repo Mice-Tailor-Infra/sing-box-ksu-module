@@ -16,16 +16,11 @@ struct Cli {
 }
 
 use nix::sys::signal::{self, Signal};
-use nix::sys::wait::waitpid;
-use nix::unistd::{Pid, fork, ForkResult, execv};
-use std::ffi::CString;
-use std::fs::File;
-use std::io::Read;
-use std::os::unix::process::CommandExt;
-use std::process::{Command, Stdio};
+use nix::unistd::Pid;
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 #[derive(Subcommand)]
@@ -113,8 +108,8 @@ fn handle_run(config_path: PathBuf) -> Result<()> {
     fs::write(&pid_file, pid.to_string())?;
 
     // 3. Setup Signal Handling
-    let running = Arc::new(AtomicBool::new(true));
-    // let r = running.clone(); // Unused
+    let _running = Arc::new(AtomicBool::new(true));
+    // let r = _running.clone(); // Unused
 
     // ... signal handling logic ...
     match child.wait() {
