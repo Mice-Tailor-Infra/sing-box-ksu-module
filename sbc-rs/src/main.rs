@@ -7,6 +7,12 @@ use cli::{Cli, Commands};
 use handlers::{render, update, daemon};
 
 fn main() -> Result<()> {
+    // Initialize Logger (Default to INFO)
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", "info");
+    }
+    env_logger::init();
+
     let cli = Cli::parse();
 
     match cli.command {
