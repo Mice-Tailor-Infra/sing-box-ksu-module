@@ -80,7 +80,7 @@ fi
 # 7. Test Daemon Mode (Run/Stop)
 echo "Testing Daemon Mode..."
 # Create mock sing-box binary
-cat << 'EOF' > /tmp/sing-box-mock
+cat << 'EOF' > /tmp/sing-box
 #!/bin/bash
 if [ "$1" == "run" ]; then
     echo "Mock sing-box running..."
@@ -89,7 +89,7 @@ if [ "$1" == "run" ]; then
     while true; do sleep 1; done
 fi
 EOF
-chmod +x /tmp/sing-box-mock
+chmod +x /tmp/sing-box
 export PATH="/tmp:$PATH" # Put mock in path
 
 # Override command in sbc-rs? No, sbc-rs calls "sing-box". We rely on PATH.
@@ -128,7 +128,7 @@ else
 fi
 
 # Clean up
-rm /tmp/sing-box-mock
+rm /tmp/sing-box
 
 echo "Validating Output with sing-box check..."
 if command -v sing-box &> /dev/null; then
