@@ -13,6 +13,12 @@ ENV_EXAMPLE="$WORKSPACE/.env.example"
 ENV_EXAMPLE_URL="https://miceworld.top/sing-box-config-templates/mobile/.env.example"
 STOP_FLAG="$WORKSPACE/STOP"
 
+SBC_RS="$WORKSPACE/bin/sbc-rs"
+if [ ! -x "$SBC_RS" ]; then
+    echo "❌ 严重错误: 找不到核心组件 ($SBC_RS) 或无执行权限。"
+    exit 1
+fi
+
 case "$1" in
     start)
         # 清除停止标志，允许守护进程运行
@@ -26,41 +32,18 @@ case "$1" in
         fi
         ;;
     stop)
-        echo "正在停止 Sing-box..."
+        echo "正在停止 Sing-box (Rust Stop)..."
         # 设置停止标志，防止 service.sh 自动重启
         touch "$STOP_FLAG"
-        PID=$(pgrep -f "$BIN")
-        if [ ! -z "$PID" ]; then
-            PPID=$(ps -o ppid= -p "$PID" | tr -d ' ')
-            if [ ! -z "$PPID" ]; then
-                kill -15 "$PPID" >/dev/null 2>&1 || true
-            fi
-            kill -15 "$PID" >/dev/null 2>&1
-            echo "等待专业清理 (VoLTE 保护期)..."
-            count=0
-            while kill -0 "$PID" 2>/dev/null && [ $count -lt 10 ]; do
-                sleep 1
-                count=$((count + 1))
-            done
-            [ $count -ge 10 ] && kill -9 "$PID" || true
-        fi
-        pkill -15 -f "$SERVICE_PATH" >/dev/null 2>&1 || true
-        echo "✅ 服务已停止 (Native Cleanup)。"
+        "$SBC_RS" stop
         ;;
     restart)
-        $0 stop
+        "$0" stop
         sleep 1
-        $0 start
+        "$0" start
         ;;
     update)
         echo "📡 正在通过 EdgeOne 连接 miceworld 指挥部 (One-Click Update)..."
-        SBC_RS="$WORKSPACE/bin/sbc-rs"
-        
-        if [ ! -x "$SBC_RS" ]; then
-             echo "❌ 严重错误: 找不到核心组件 ($SBC_RS) 或无执行权限。"
-             exit 1
-        fi
-
         # 1. 执行下载与校验 (Rust Native)
         "$SBC_RS" update \
             --template-url "$TEMPLATE_URL" \
@@ -69,22 +52,18 @@ case "$1" in
             --env-path "$ENV_EXAMPLE"
         
         RET=$?
-        if [ $RET -ne 0 ]; then
-             echo "❌ 更新失败，核心组件返回错误码: $RET"
-             exit $RET
-        fi
+        [ $RET -ne 0 ] && exit $RET
         
         # 2. 执行渲染与重载
         echo "正在唤醒本地渲染引擎 (Rust Engine)..."
         if [ -f "$ENV_FILE" ]; then
             set -a; . "$ENV_FILE"; set +a
             "$SBC_RS" render --template "$TEMPLATE" --output "$CONFFILE"
-            RET=$?
-            if [ $RET -eq 0 ]; then
+            if [ $? -eq 0 ]; then
                 echo "🚀 渲染完成 (Rust AST)，执行热重载..."
-                $0 restart
+                "$0" restart
             else
-                echo "❌ 渲染失败，错误码: $RET"
+                echo "❌ 渲染失败。"
             fi
         else
             echo "⚠️ 警告：未发现 .env 凭证，无法完成渲染。"
@@ -94,6 +73,7 @@ case "$1" in
         if pgrep -f "$BIN" > /dev/null; then
             PID=$(pgrep -f "$BIN")
             echo "状态: 正在运行 (PID: $PID)"
+            echo "版本: $("$SBC_RS" --version)"
             echo "工作空间: $WORKSPACE"
             echo "日志最后 5 行:"
             tail -n 5 "$LOG_FILE"
