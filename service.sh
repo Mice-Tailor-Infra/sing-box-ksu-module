@@ -20,6 +20,19 @@ ui_log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
 }
 
+rotate_log() {
+    # 限制日志大小为 1MB
+    MAX_SIZE=1048576
+    if [ -f "$LOG_FILE" ]; then
+        SIZE=$(stat -c%s "$LOG_FILE")
+        if [ "$SIZE" -gt "$MAX_SIZE" ]; then
+            mv "$LOG_FILE" "${LOG_FILE}.old"
+            ui_log "🔄 日志已轮转（超过 1MB）。"
+        fi
+    fi
+}
+
+rotate_log
 ui_log "--- 启动守护进程 (Rust Supervisor Mode) ---"
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
