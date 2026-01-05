@@ -68,6 +68,16 @@ pub fn handle_run(config_path: Option<PathBuf>, template_path: Option<PathBuf>, 
     let mut retry_count = 0;
     let max_retries = 4;
 
+    // 确保 PID 文件存放目录存在
+    if let Some(parent) = pid_file.parent() {
+        fs::create_dir_all(parent).context("无法创建 PID 目录")?;
+    }
+    
+    // 写入当前监护进程 (Supervisor) 的 PID
+    let my_pid = std::process::id();
+    fs::write(&pid_file, my_pid.to_string()).context("无法写入 PID 文件")?;
+    info!("📌 监护进程 PID 已写入: {} -> {:?}", my_pid, pid_file);
+
     // 工作目录准备
     let final_wd = working_dir.unwrap_or_else(|| workspace.clone());
     if !final_wd.exists() {
@@ -140,19 +150,8 @@ pub fn handle_run(config_path: Option<PathBuf>, template_path: Option<PathBuf>, 
 
         let pid = child.id();
         info!("✅ sing-box 已启动，PID: {}", pid);
-        let _ = fs::write(&pid_file, pid.to_string());
 
-        // 5. 辅助杀死线程
-        let killer_running = running.clone();
-        let pid_to_kill = pid;
-        thread::spawn(move || {
-            while killer_running.load(Ordering::SeqCst) {
-                thread::sleep(Duration::from_millis(500));
-            }
-            unsafe { libc::kill(pid_to_kill as i32, libc::SIGTERM); }
-        });
-
-        // 6. 等待循环
+        // 5. 等待循环
         let mut exit_status = None;
         while running.load(Ordering::SeqCst) {
             match child.try_wait() {
