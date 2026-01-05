@@ -38,9 +38,11 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
 
     # 核心启动：由 Rust 接管一切 (渲染 + 进程守护 + 信号转发)
     # service.sh 退化为简单的无限重启器
+    export WORKSPACE="$WORKSPACE"
     "$SBC_RS" run \
         --config "$CONFFILE" \
         --template "$TEMPLATE" \
+        -D "$WORKSPACE/var/lib/sing-box" \
         >> "$LOG_FILE" 2>&1
         
     EXIT_CODE=$?
