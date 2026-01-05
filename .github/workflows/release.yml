@@ -44,6 +44,25 @@ jobs:
         if: steps.cache-cross.outputs.cache-hit != 'true'
         run: cargo install cross --git https://github.com/cross-rs/cross
 
+      - name: Cache Cross Docker Image
+        id: cache-docker
+        uses: actions/cache@v4
+        with:
+          path: /tmp/cross-image.tar
+          key: docker-ghcr-cross-rs-aarch64-linux-android-main
+
+      - name: Load Docker Image
+        if: steps.cache-docker.outputs.cache-hit == 'true'
+        run: docker load --input /tmp/cross-image.tar
+
+      - name: Pull & Save Docker Image
+        if: steps.cache-docker.outputs.cache-hit != 'true'
+        run: |
+          echo "⬇️ Pulling Docker image..."
+          docker pull ghcr.io/cross-rs/aarch64-linux-android:main
+          echo "💾 Saving Docker image to cache..."
+          docker save ghcr.io/cross-rs/aarch64-linux-android:main -o /tmp/cross-image.tar
+
       - name: Build sbc-rs (Android)
         run: |
           cd sbc-rs
