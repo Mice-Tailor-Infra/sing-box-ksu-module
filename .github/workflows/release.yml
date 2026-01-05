@@ -28,7 +28,20 @@ jobs:
         with:
           targets: aarch64-linux-android
 
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sbc-rs
+
+      - name: Cache Cross Binary
+        id: cache-cross
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cross
+          key: ${{ runner.os }}-cross-bin-v1
+
       - name: Install Cross
+        if: steps.cache-cross.outputs.cache-hit != 'true'
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build sbc-rs (Android)
