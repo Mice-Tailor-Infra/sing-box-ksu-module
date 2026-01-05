@@ -23,6 +23,12 @@ ui_log() {
 ui_log "--- 启动守护进程 (Rust Supervisor Mode) ---"
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    # 0. 检查手动停止标志 (Stop Flag)
+    if [ -f "$WORKSPACE/STOP" ]; then
+        ui_log "🛑 检测到停止标志 (STOP Flag)，终止守护循环。"
+        break
+    fi
+
     SBC_RS="$WORKSPACE/bin/sbc-rs"
     
     if [ ! -x "$SBC_RS" ]; then
