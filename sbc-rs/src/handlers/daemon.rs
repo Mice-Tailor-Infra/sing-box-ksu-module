@@ -28,7 +28,7 @@ fn get_pid_file_path(workspace: &PathBuf) -> PathBuf {
     env::var("SBC_PID_FILE").map(PathBuf::from).unwrap_or_else(|_| workspace.join("run/sing-box.pid"))
 }
 
-// Simple .env loader
+// 简单的 .env 加载器
 fn load_env_file(path: &PathBuf) -> Result<()> {
     if !path.exists() { return Ok(()); }
     let content = fs::read_to_string(path)?;
@@ -46,39 +46,39 @@ fn load_env_file(path: &PathBuf) -> Result<()> {
 pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>, working_dir: Option<PathBuf>) -> Result<()> {
     let workspace = get_workspace_path(&config_path);
     
-    // 0. Load Env
+    // 0. 加载环境配置
     let env_path = workspace.join(".env");
     if let Err(e) = load_env_file(&env_path) {
-        warn!("⚠️ Failed to load .env file at {:?}: {}", env_path, e);
+        warn!("⚠️ 无法在 {:?} 加载 .env 文件: {}", env_path, e);
     }
 
-    info!("🚀 Starting sing-box supervisor...");
-    info!("📂 Workspace: {:?}", workspace);
+    info!("🚀 正在启动 sing-box 监控进程...");
+    info!("📂 工作目录: {:?}", workspace);
     
-    // 0. Auto-Render (if requested)
+    // 0. 自动渲染（如果已请求）
     if let Some(template) = template_path {
-        info!("🎨 Auto-rendering config from template: {:?}", template);
+        info!("🎨 正在从模板自动渲染配置: {:?}", template);
         if let Err(e) = render::handle_render(template, config_path.clone()) {
-            error!("❌ Render failed: {}", e);
+            error!("❌ 渲染失败: {}", e);
             return Err(e);
         }
-        info!("✅ Config rendered successfully.");
+        info!("✅ 配置渲染成功。");
     }
 
     let pid_file = get_pid_file_path(&workspace);
     
-    // Ensure run dir exists
+    // 确保运行目录存在
     if let Some(parent) = pid_file.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
-             warn!("⚠️ Failed to create run dir {:?}: {}", parent, e);
+             warn!("⚠️ 创建运行目录 {:?} 失败: {}", parent, e);
         }
     }
 
-    // 1. Start Child Process
-    // Use working_dir if provided, otherwise default to workspace root
+    // 1. 启动子进程
+    // 如果提供了 working_dir 则使用，否则默认为工作空间根目录
     let final_wd = working_dir.unwrap_or_else(|| workspace.clone());
     if !final_wd.exists() {
-        fs::create_dir_all(&final_wd).context("Failed to create working directory")?;
+        fs::create_dir_all(&final_wd).context("法创建工作目录")?;
     }
 
     use std::os::unix::process::CommandExt;
@@ -88,15 +88,15 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>, working_
         .arg(&config_path)
         .current_dir(&final_wd) // All relative paths in config will resolve here
         .pre_exec(|| {
-            // Kernel-level safety: if parent dies, child receives SIGTERM
+            // 内核级安全机制：如果父进程死亡，子进程将收到 SIGTERM 信号
             unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM); }
             Ok(())
         })
         .spawn()
-        .context("Failed to spawn sing-box process")?;
+        .context("启动 sing-box 进程失败")?;
 
     let pid = child.id();
-    info!("✅ sing-box started with PID: {} | WD: {:?}", pid, final_wd);
+    info!("✅ sing-box 已启动，PID: {} | 工作目录: {:?}", pid, final_wd);
 
     // 2. Write PID file
     fs::write(&pid_file, pid.to_string())?;
@@ -110,23 +110,23 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>, working_
         if !r.load(Ordering::SeqCst) { return; }
         r.store(false, Ordering::SeqCst);
         
-        info!("🛑 Received termination signal, shutting down child...");
+        info!("🛑 接收到终止信号，正在关闭子进程...");
         let pid = Pid::from_raw(child_pid as i32);
         match signal::kill(pid, Signal::SIGTERM) {
-             Ok(_) => info!("Sent SIGTERM to child process"),
-             Err(e) => error!("Failed to forward signal to child: {}", e),
+             Ok(_) => info!("已向子进程发送 SIGTERM 信号"),
+             Err(e) => error!("向子进程转发信号失败: {}", e),
         }
-    }).context("Error setting Ctrl-C handler")?;
+    }).context("设置 Ctrl-C 处理器出错")?;
 
-    // 4. Supervisor Loop
+    // 4. 监控循环
     match child.wait() {
         Ok(status) => {
             if !status.success() {
-                 anyhow::bail!("sing-box exited with error: {}", status);
+                 anyhow::bail!("sing-box 异常退出: {}", status);
             }
-            info!("sing-box exited with: {}", status);
+            info!("sing-box 已退出: {}", status);
         },
-        Err(e) => error!("Error waiting for sing-box: {}", e),
+        Err(e) => error!("等候 sing-box 退出时出错: {}", e),
     }
 
     let _ = fs::remove_file(pid_file);
@@ -139,7 +139,7 @@ pub fn handle_stop() -> Result<()> {
     let pid_file = get_pid_file_path(&workspace);
     
     if !pid_file.exists() {
-        warn!("⚠️ No running instance found (PID file missing at {:?}).", pid_file);
+        warn!("⚠️ 未发现运行中的实例 (PID 文件缺失: {:?})。", pid_file);
         return Ok(());
     }
 
@@ -147,23 +147,23 @@ pub fn handle_stop() -> Result<()> {
     let pid_num: i32 = pid_str.parse()?;
     let pid = Pid::from_raw(pid_num);
 
-    info!("🛑 Send SIGTERM to PID: {}", pid_num);
+    info!("🛑 正在向 PID {} 发送 SIGTERM...", pid_num);
     
     match signal::kill(pid, Signal::SIGTERM) {
         Ok(_) => {
-            info!("⏳ Waiting for process to exit...");
+            info!("⏳ 正在等待进程退出...");
             for _ in 0..50 { 
                 thread::sleep(Duration::from_millis(100));
                 if signal::kill(pid, None).is_err() { 
-                    info!("✅ Process exited gracefully.");
+                    info!("✅ 进程已正常退出。");
                     let _ = fs::remove_file(pid_file);
                     return Ok(());
                 }
             }
-            warn!("⚠️ Process {} did not exit after 5 seconds.", pid_num);
+            warn!("⚠️ 进程 {} 在 5 秒后仍未退出。", pid_num);
         },
         Err(e) => {
-            error!("Failed to send signal: {} (Process might be already dead)", e);
+            error!("发送信号失败: {} (进程可能已经结束)", e);
             let _ = fs::remove_file(pid_file);
         }
     }
