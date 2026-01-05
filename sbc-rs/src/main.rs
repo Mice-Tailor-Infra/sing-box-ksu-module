@@ -28,8 +28,14 @@ fn main() -> Result<()> {
     let template_content = fs::read_to_string(&args.template)
         .with_context(|| format!("Failed to read template file: {:?}", args.template))?;
 
+    // 2.1 Strip Comments (Simple JSONC support)
+    // serde_json is strict, so we remove // and /* */ comments.
+    // Note: This simple stripper might not handle edge cases like trailing commas perfectly if they were hidden by comments,
+    // but sing-box templates are generally well-formed JSONC.
+    let json_content = strip_comments(&template_content);
+
     // 3. Parse Template as JSON
-    let root: Value = serde_json::from_str(&template_content)
+    let root: Value = serde_json::from_str(&json_content)
         .context("Failed to parse template as valid JSON. Ensure input is well-formed.")?;
 
     // 4. Process AST
@@ -170,4 +176,60 @@ fn interpolate_string(s: &str, env: &HashMap<String, String>) -> String {
         }
     }
     result
+}
+
+fn strip_comments(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    let mut in_quote = false;
+    let mut escaped = false;
+
+    while let Some(c) = chars.next() {
+        if in_quote {
+            out.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_quote = false;
+            }
+        } else {
+            // Check for comment start
+            if c == '/' {
+                if let Some(&next_c) = chars.peek() {
+                    if next_c == '/' {
+                        // Line comment: skip until newline
+                        chars.next(); // consume second /
+                        while let Some(&nc) = chars.peek() {
+                            if nc == '\n' {
+                                break;
+                            }
+                            chars.next();
+                        }
+                        continue;
+                    } else if next_c == '*' {
+                        // Block comment: skip until */
+                        chars.next(); // consume *
+                        while let Some(nc) = chars.next() {
+                            if nc == '*' {
+                                if let Some(&nnc) = chars.peek() {
+                                    if nnc == '/' {
+                                        chars.next(); // consume /
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                }
+            }
+            if c == '"' {
+                in_quote = true;
+            }
+            out.push(c);
+        }
+    }
+    out
 }

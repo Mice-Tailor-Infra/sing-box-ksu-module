@@ -65,12 +65,24 @@ case "$1" in
                     echo "📝 .env.example 模板已同步，请对比 .env.example 检查变更。"
                 fi
 
-                echo "正在唤醒本地渲染引擎..."
+                echo "正在唤醒本地渲染引擎 (Rust Engine)..."
                 if [ -f "$ENV_FILE" ]; then
                     set -a; . "$ENV_FILE"; set +a
-                    "$WORKSPACE/bin/envsubst" < "$TEMPLATE" > "$CONFFILE"
-                    echo "🚀 渲染完成，执行热重载 (Hot Reload)..."
-                    $0 restart
+                    
+                    # 使用 sbc-rs Rust 核心进行 AST 级渲染
+                    SBC_RS="$WORKSPACE/bin/sbc-rs"
+                    if [ -x "$SBC_RS" ]; then
+                        "$SBC_RS" --template "$TEMPLATE" --output "$CONFFILE"
+                        RET=$?
+                        if [ $RET -eq 0 ]; then
+                            echo "🚀 渲染完成 (Rust AST)，执行热重载..."
+                            $0 restart
+                        else
+                            echo "❌ 渲染失败，错误码: $RET"
+                        fi
+                    else
+                        echo "❌ 严重错误: 找不到渲染引擎 ($SBC_RS) 或无执行权限。"
+                    fi
                 else
                     echo "⚠️ 警告：未发现 .env 凭证，无法完成渲染。"
                 fi
