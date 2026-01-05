@@ -81,11 +81,17 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>, working_
         fs::create_dir_all(&final_wd).context("Failed to create working directory")?;
     }
 
+    use std::os::unix::process::CommandExt;
     let mut child = Command::new("sing-box")
         .arg("run")
         .arg("-c")
         .arg(&config_path)
         .current_dir(&final_wd) // All relative paths in config will resolve here
+        .pre_exec(|| {
+            // Kernel-level safety: if parent dies, child receives SIGTERM
+            unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM); }
+            Ok(())
+        })
         .spawn()
         .context("Failed to spawn sing-box process")?;
 
