@@ -128,7 +128,7 @@ jobs:
           # zip -ry "$ZIP_NAME" bin/ system/ customize.sh uninstall.sh service.sh module.prop README.md
 
           # [Local Test Logic] 打包包含 Config 模板和 .env 的全量包，方便离线测试
-          zip -ry "$ZIP_NAME" bin/ system/ customize.sh uninstall.sh service.sh module.prop README.md config.template.json .env
+          zip -ry "$ZIP_NAME" bin/ system/ customize.sh uninstall.sh service.sh module.prop README.md config.template.json .env.example
           echo "ZIP_PATH=$ZIP_NAME" >> $GITHUB_ENV
 
 #      - name: Publish to GitHub Releases

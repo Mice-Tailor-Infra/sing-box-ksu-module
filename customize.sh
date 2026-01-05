@@ -111,11 +111,11 @@ ui_print ""
 ui_print ">>> Step 6: 正在初始化环境变量..."
 
 if [ ! -f "$WORKSPACE/.env" ]; then
-    # 优先使用压缩包内自带的 .env (本地测试模式)
-    if [ -f "$MODPATH/.env" ]; then
-        cp -f "$MODPATH/.env" "$WORKSPACE/.env"
+    # 优先使用压缩包内自带的 .env.example (本地测试模式)
+    if [ -f "$MODPATH/.env.example" ]; then
+        cp -f "$MODPATH/.env.example" "$WORKSPACE/.env"
         chmod 600 "$WORKSPACE/.env"
-        ui_print "    ✅ 已使用本地 .env 模板 (Local Override)"
+        ui_print "    ✅ 已使用本地 .env.example 模板 (Local Override)"
     elif curl -kfsSL --connect-timeout 10 --max-time 30 "${ENV_URL}?t=${TIMESTAMP}" -o "$WORKSPACE/.env" 2>/dev/null; then
         chmod 600 "$WORKSPACE/.env"
         ui_print "    ✅ .env 模板已从云端拉取"
