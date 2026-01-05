@@ -47,6 +47,10 @@ pub enum Commands {
         /// Path to the configuration template file (Optional, for auto-render)
         #[arg(short, long)]
         template: Option<PathBuf>,
+
+        /// Working directory for sing-box (Optional, where cache/ui files will be placed)
+        #[arg(short = 'D', long)]
+        working_dir: Option<PathBuf>,
     },
     /// Stop the running daemon gracefully
     Stop,

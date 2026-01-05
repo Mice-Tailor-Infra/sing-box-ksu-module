@@ -12,11 +12,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use log::{info, warn, error};
 
-fn get_pid_file_path() -> PathBuf {
-    env::var("SBC_PID_FILE").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/data/adb/sing-box-workspace/run/sing-box.pid"))
+fn get_workspace_path(config_path: &PathBuf) -> PathBuf {
+    // 优先从环境变量获取
+    if let Ok(ws) = env::var("WORKSPACE") {
+        return PathBuf::from(ws);
+    }
+    // 兜底：从配置文件路径推导 (etc/config.json -> etc -> workspace)
+    config_path.parent()
+        .and_then(|p| p.parent())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/data/adb/sing-box-workspace"))
 }
 
-// Simple .env loader to avoid extra dependencies
+fn get_pid_file_path(workspace: &PathBuf) -> PathBuf {
+    env::var("SBC_PID_FILE").map(PathBuf::from).unwrap_or_else(|_| workspace.join("run/sing-box.pid"))
+}
+
+// Simple .env loader
 fn load_env_file(path: &PathBuf) -> Result<()> {
     if !path.exists() { return Ok(()); }
     let content = fs::read_to_string(path)?;
@@ -24,7 +36,6 @@ fn load_env_file(path: &PathBuf) -> Result<()> {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') { continue; }
         if let Some((k, v)) = line.split_once('=') {
-            // Remove quotes if present
             let clean_v = v.trim().trim_matches('"').trim_matches('\'');
             unsafe { env::set_var(k.trim(), clean_v); }
         }
@@ -32,20 +43,17 @@ fn load_env_file(path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Result<()> {
-    // 0. Load Env (Restoring functionality lost from service.sh)
-    // Assuming .env is in WORKSPACE (parent of config_path which is etc/config.json -> workspace/etc/config.json? No.)
-    // WORKSPACE is usually /data/adb/sing-box-workspace
-    // config_path passed from CLI is usually absolute.
-    // Let's deduce workspace or just fail-safe to known paths?
-    // service.sh passes full path.
-    // Let's hardcode the search for .env in /data/adb/sing-box-workspace since this is a tailored module.
-    let env_path = PathBuf::from("/data/adb/sing-box-workspace/.env");
+pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>, working_dir: Option<PathBuf>) -> Result<()> {
+    let workspace = get_workspace_path(&config_path);
+    
+    // 0. Load Env
+    let env_path = workspace.join(".env");
     if let Err(e) = load_env_file(&env_path) {
-        warn!("⚠️ Failed to load .env file: {}", e);
+        warn!("⚠️ Failed to load .env file at {:?}: {}", env_path, e);
     }
 
     info!("🚀 Starting sing-box supervisor...");
+    info!("📂 Workspace: {:?}", workspace);
     
     // 0. Auto-Render (if requested)
     if let Some(template) = template_path {
@@ -57,7 +65,7 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Resul
         info!("✅ Config rendered successfully.");
     }
 
-    let pid_file = get_pid_file_path();
+    let pid_file = get_pid_file_path(&workspace);
     
     // Ensure run dir exists
     if let Some(parent) = pid_file.parent() {
@@ -67,17 +75,22 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Resul
     }
 
     // 1. Start Child Process
+    // Use working_dir if provided, otherwise default to workspace root
+    let final_wd = working_dir.unwrap_or_else(|| workspace.clone());
+    if !final_wd.exists() {
+        fs::create_dir_all(&final_wd).context("Failed to create working directory")?;
+    }
+
     let mut child = Command::new("sing-box")
         .arg("run")
         .arg("-c")
-        .arg(config_path)
-        .arg("-D")
-        .arg("/data/adb/sing-box-workspace") // Set working dir
+        .arg(&config_path)
+        .current_dir(&final_wd) // All relative paths in config will resolve here
         .spawn()
         .context("Failed to spawn sing-box process")?;
 
     let pid = child.id();
-    info!("✅ sing-box started with PID: {}", pid);
+    info!("✅ sing-box started with PID: {} | WD: {:?}", pid, final_wd);
 
     // 2. Write PID file
     fs::write(&pid_file, pid.to_string())?;
@@ -85,19 +98,13 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Resul
     // 3. Setup Signal Handling
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
-    
-    // Extract PID for the closure to avoid moving 'child'
     let child_pid = pid;
 
-    // Use ctrlc to trap SIGINT/SIGTERM and forward to child
     ctrlc::set_handler(move || {
-        if !r.load(Ordering::SeqCst) {
-             return; // Already handling
-        }
+        if !r.load(Ordering::SeqCst) { return; }
         r.store(false, Ordering::SeqCst);
         
         info!("🛑 Received termination signal, shutting down child...");
-        // Retrieve PID (copy from captured variable)
         let pid = Pid::from_raw(child_pid as i32);
         match signal::kill(pid, Signal::SIGTERM) {
              Ok(_) => info!("Sent SIGTERM to child process"),
@@ -105,8 +112,7 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Resul
         }
     }).context("Error setting Ctrl-C handler")?;
 
-    // 4. Supervisor Loop (Blocking Wait)
-    // child is NOT MOVED because we used child_pid in closure
+    // 4. Supervisor Loop
     match child.wait() {
         Ok(status) => {
             if !status.success() {
@@ -117,13 +123,15 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Resul
         Err(e) => error!("Error waiting for sing-box: {}", e),
     }
 
-    // Cleanup PID file
     let _ = fs::remove_file(pid_file);
     Ok(())
 }
 
 pub fn handle_stop() -> Result<()> {
-    let pid_file = get_pid_file_path();
+    // deduce workspace for stop too
+    let workspace = PathBuf::from(env::var("WORKSPACE").unwrap_or_else(|_| "/data/adb/sing-box-workspace".into()));
+    let pid_file = get_pid_file_path(&workspace);
+    
     if !pid_file.exists() {
         warn!("⚠️ No running instance found (PID file missing at {:?}).", pid_file);
         return Ok(());
@@ -135,24 +143,18 @@ pub fn handle_stop() -> Result<()> {
 
     info!("🛑 Send SIGTERM to PID: {}", pid_num);
     
-    // Send SIGTERM
     match signal::kill(pid, Signal::SIGTERM) {
         Ok(_) => {
             info!("⏳ Waiting for process to exit...");
-            // Polling check if still alive
-            for _ in 0..50 { // Wait up to 5 seconds
+            for _ in 0..50 { 
                 thread::sleep(Duration::from_millis(100));
                 if signal::kill(pid, None).is_err() { 
-                    // kill(0) failed means process is gone (usually ESRCH)
                     info!("✅ Process exited gracefully.");
                     let _ = fs::remove_file(pid_file);
                     return Ok(());
                 }
             }
-            // If we get here, it didn't die.
             warn!("⚠️ Process {} did not exit after 5 seconds.", pid_num);
-            warn!("⚠️ AUTOMATIC KILL (-9) IS DISABLED per safety policy.");
-            warn!("⚠️ Please investigate manually or use 'kill -9 {}' if necessary.", pid_num);
         },
         Err(e) => {
             error!("Failed to send signal: {} (Process might be already dead)", e);
