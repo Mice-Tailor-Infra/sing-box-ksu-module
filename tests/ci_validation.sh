@@ -77,6 +77,61 @@ else
     exit 1
 fi
 
+# 7. Test Daemon Mode (Run/Stop)
+echo "Testing Daemon Mode..."
+# Create mock sing-box binary
+cat << 'EOF' > /tmp/sing-box-mock
+#!/bin/bash
+if [ "$1" == "run" ]; then
+    echo "Mock sing-box running..."
+    # Simulate long running process handling signals
+    trap 'echo "Mock received TERM"; exit 0' SIGTERM
+    while true; do sleep 1; done
+fi
+EOF
+chmod +x /tmp/sing-box-mock
+export PATH="/tmp:$PATH" # Put mock in path
+
+# Override command in sbc-rs? No, sbc-rs calls "sing-box". We rely on PATH.
+# Link mock to expected location if hardcoded?
+# sbc-rs uses "sing-box" in Command::new(). PATH is sufficient.
+
+echo "Starting sbc-rs run (background)..."
+# We need to run it from sbc script or direct binary. Direct binary for unit test.
+# But sbc-rs expects to write PID file to /data/adb/... which might not exist in CI.
+# We should override PID_FILE path? It's hardcoded const in main.rs.
+# Wait, for CI validation we can't easily change the const without recompiling.
+# We should probably mkdir -p the path in CI script.
+mkdir -p /data/adb/sing-box-workspace/run
+
+"$SBC_BIN" run --config "$OUTPUT_PATH" > /tmp/daemon.log 2>&1 &
+DAEMON_PID=$!
+sleep 2
+
+if grep -q "Started sing-box supervisor" /tmp/daemon.log || grep -q "sing-box started with PID" /tmp/daemon.log; then
+    echo "✅ Daemon started."
+else
+    echo "❌ Daemon failed to start."
+    cat /tmp/daemon.log
+    kill $DAEMON_PID
+    exit 1
+fi
+
+echo "Stopping daemon..."
+"$SBC_BIN" stop
+
+sleep 1
+if kill -0 $DAEMON_PID 2>/dev/null; then
+    echo "❌ Daemon did not exit."
+    kill $DAEMON_PID
+    exit 1
+else
+    echo "✅ Daemon exited gracefully."
+fi
+
+# Clean up
+rm /tmp/sing-box-mock
+
 echo "Validating Output with sing-box check..."
 if command -v sing-box &> /dev/null; then
     # sing-box check needs the rulesets referenced in config to exist? 
