@@ -10,48 +10,48 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Render configuration from template
+    /// 从模板渲染配置
     Render {
-        /// Path to the configuration template file
+        /// 配置模板文件的路径
         #[arg(short, long)]
         template: PathBuf,
 
-        /// Path to the output configuration file
+        /// 输出配置文件的路径
         #[arg(short, long)]
         output: PathBuf,
     },
-    /// Update templates from remote URL
+    /// 从远程 URL 更新模板
     Update {
-        /// URL/Path to the config template
+        /// 配置模板的 URL/路径
         #[arg(short = 'u', long)]
         template_url: String,
 
-        /// Local path to save the config template
+        /// 保存配置模板的本地路径
         #[arg(short = 't', long)]
         template_path: PathBuf,
 
-        /// URL/Path to the env example (Optional)
+        /// 环境示例文件的 URL/路径 (可选)
         #[arg(long)]
         env_url: Option<String>,
 
-        /// Local path to save the env example (Optional)
+        /// 保存环境示例文件的本地路径 (可选)
         #[arg(long)]
         env_path: Option<PathBuf>,
     },
-    /// Run sing-box as a supervised daemon
+    /// 以后台监控模式运行 sing-box
     Run {
-        /// Path to the config file to use
+        /// 要使用的配置文件路径
         #[arg(short, long)]
         config: PathBuf,
 
-        /// Path to the configuration template file (Optional, for auto-render)
+        /// 配置模板文件路径 (可选，用于自动渲染)
         #[arg(short, long)]
         template: Option<PathBuf>,
 
-        /// Working directory for sing-box (Optional, where cache/ui files will be placed)
+        /// sing-box 的工作目录 (可选，缓存/UI 文件将放置于此)
         #[arg(short = 'D', long)]
         working_dir: Option<PathBuf>,
     },
-    /// Stop the running daemon gracefully
+    /// 优雅地停止正在运行的监控进程
     Stop,
 }

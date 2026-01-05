@@ -7,8 +7,8 @@ use cli::{Cli, Commands};
 use handlers::{render, update, daemon};
 
 fn main() -> Result<()> {
-    // Initialize Logger (Default to INFO)
-    // Initialize Logger with Local Time
+    // 初始化日志 (默认为 INFO)
+    // 使用本地时间初始化日志
     if std::env::var("RUST_LOG").is_err() {
         unsafe { std::env::set_var("RUST_LOG", "info"); }
     }
