@@ -44,11 +44,38 @@ export INBOUNDS_BOTTOM='{"type":"direct","tag":"dns-in-2","network":"udp"}'
 export EXPERIMENTAL_CLASH_API="" # Should be ignored/empty
 export EXPERIMENTAL_CACHE_FILE="" # Should be ignored/empty
 
-# Create dummy rule-set file (valid source format)
-echo '{"version": 1, "rules": []}' > /tmp/test.json
+# 5. Test 'render' command
+echo "Running sbc-rs render..."
+"$SBC_BIN" render --template "$TEMPLATE_PATH" --output "$OUTPUT_PATH"
 
-echo "Running sbc-rs..."
-"$SBC_BIN" --template "$TEMPLATE_PATH" --output "$OUTPUT_PATH"
+# 6. Test 'update' command (Mock Server)
+echo "Running sbc-rs update (Mock Server)..."
+mkdir -p /tmp/www
+echo '{"inbounds": []}' > /tmp/www/template.json # Minimal valid config signature
+echo "MOCK_ENV=1" > /tmp/www/env.example
+
+# Start background mock server
+cd /tmp/www
+python3 -m http.server 8080 &
+SERVER_PID=$!
+cd -
+
+sleep 1
+
+"$SBC_BIN" update \
+    --template-url "http://localhost:8080/template.json" \
+    --template-path "$TEMPLATE_PATH.new" \
+    --env-url "http://localhost:8080/env.example" \
+    --env-path "$MOCK_ENV_PATH.new" || { kill $SERVER_PID; exit 1; }
+
+kill $SERVER_PID
+
+if grep -q "inbounds" "$TEMPLATE_PATH.new"; then
+    echo "✅ Update command validation passed."
+else
+    echo "❌ Update command validation failed."
+    exit 1
+fi
 
 echo "Validating Output with sing-box check..."
 if command -v sing-box &> /dev/null; then

@@ -48,50 +48,41 @@ case "$1" in
         $0 start
         ;;
     update)
-        echo "📡 正在通过 EdgeOne 连接 miceworld 指挥部..."
+        echo "📡 正在通过 EdgeOne 连接 miceworld 指挥部 (One-Click Update)..."
+        SBC_RS="$WORKSPACE/bin/sbc-rs"
         
-        # === 生成时间戳后缀 (例如 ?t=1735616520) ===
-        CACHE_BUSTER="?t=$(date +%s)"
-        
-        # 在 URL 后面拼接后缀，强制穿透 CDN 缓存
-        if curl -fL -o "$TEMPLATE.tmp" "${TEMPLATE_URL}${CACHE_BUSTER}"; then
-            if grep -q "inbounds" "$TEMPLATE.tmp"; then
-                mv "$TEMPLATE.tmp" "$TEMPLATE"
-                echo "✅ 逻辑同步成功 (已穿透缓存)。"
-                
-                # === 更新 .env 模板 (不覆盖用户 .env) ===
-                if curl -fL -o "$ENV_EXAMPLE.tmp" "${ENV_EXAMPLE_URL}${CACHE_BUSTER}"; then
-                    mv "$ENV_EXAMPLE.tmp" "$ENV_EXAMPLE"
-                    echo "📝 .env.example 模板已同步，请对比 .env.example 检查变更。"
-                fi
+        if [ ! -x "$SBC_RS" ]; then
+             echo "❌ 严重错误: 找不到核心组件 ($SBC_RS) 或无执行权限。"
+             exit 1
+        fi
 
-                echo "正在唤醒本地渲染引擎 (Rust Engine)..."
-                if [ -f "$ENV_FILE" ]; then
-                    set -a; . "$ENV_FILE"; set +a
-                    
-                    # 使用 sbc-rs Rust 核心进行 AST 级渲染
-                    SBC_RS="$WORKSPACE/bin/sbc-rs"
-                    if [ -x "$SBC_RS" ]; then
-                        "$SBC_RS" --template "$TEMPLATE" --output "$CONFFILE"
-                        RET=$?
-                        if [ $RET -eq 0 ]; then
-                            echo "🚀 渲染完成 (Rust AST)，执行热重载..."
-                            $0 restart
-                        else
-                            echo "❌ 渲染失败，错误码: $RET"
-                        fi
-                    else
-                        echo "❌ 严重错误: 找不到渲染引擎 ($SBC_RS) 或无执行权限。"
-                    fi
-                else
-                    echo "⚠️ 警告：未发现 .env 凭证，无法完成渲染。"
-                fi
+        # 1. 执行下载与校验 (Rust Native)
+        "$SBC_RS" update \
+            --template-url "$TEMPLATE_URL" \
+            --template-path "$TEMPLATE" \
+            --env-url "$ENV_EXAMPLE_URL" \
+            --env-path "$ENV_EXAMPLE"
+        
+        RET=$?
+        if [ $RET -ne 0 ]; then
+             echo "❌ 更新失败，核心组件返回错误码: $RET"
+             exit $RET
+        fi
+        
+        # 2. 执行渲染与重载
+        echo "正在唤醒本地渲染引擎 (Rust Engine)..."
+        if [ -f "$ENV_FILE" ]; then
+            set -a; . "$ENV_FILE"; set +a
+            "$SBC_RS" render --template "$TEMPLATE" --output "$CONFFILE"
+            RET=$?
+            if [ $RET -eq 0 ]; then
+                echo "🚀 渲染完成 (Rust AST)，执行热重载..."
+                $0 restart
             else
-                echo "❌ 校验失败：内容异常。"
-                rm -f "$TEMPLATE.tmp"
+                echo "❌ 渲染失败，错误码: $RET"
             fi
         else
-            echo "❌ 连接 miceworld.top 失败。"
+            echo "⚠️ 警告：未发现 .env 凭证，无法完成渲染。"
         fi
         ;;
     status)

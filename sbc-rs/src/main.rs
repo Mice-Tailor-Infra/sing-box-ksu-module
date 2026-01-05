@@ -1,37 +1,126 @@
-use anyhow::{Context, Result};
-use clap::Parser;
+use anyhow::{Context, Result, bail};
+use clap::{Parser, Subcommand};
 use serde_json::{Value, Map};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+// use std::io::Write; 
+use std::time::SystemTime;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
-struct Args {
-    /// Path to the configuration template file
-    #[arg(short, long)]
-    template: PathBuf,
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
 
-    /// Path to the output configuration file
-    #[arg(short, long)]
-    output: PathBuf,
+#[derive(Subcommand)]
+enum Commands {
+    /// Render configuration from template
+    Render {
+        /// Path to the configuration template file
+        #[arg(short, long)]
+        template: PathBuf,
+
+        /// Path to the output configuration file
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Update templates from remote URL
+    Update {
+        /// URL/Path to the config template
+        #[arg(short = 'u', long)]
+        template_url: String,
+
+        /// Local path to save the config template
+        #[arg(short = 't', long)]
+        template_path: PathBuf,
+
+        /// URL/Path to the env example (Optional)
+        #[arg(long)]
+        env_url: Option<String>,
+
+        /// Local path to save the env example (Optional)
+        #[arg(long)]
+        env_path: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let cli = Cli::parse();
 
+    match cli.command {
+        Commands::Render { template, output } => handle_render(template, output),
+        Commands::Update { template_url, template_path, env_url, env_path } => {
+            handle_update(template_url, template_path, env_url, env_path)
+        }
+    }
+}
+
+fn handle_update(
+    template_url: String,
+    template_path: PathBuf,
+    env_url: Option<String>,
+    env_path: Option<PathBuf>,
+) -> Result<()> {
+    println!("📡 Connecting to remote server...");
+
+    // Generate cache buster
+    let timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)?
+        .as_secs();
+    let cache_buster = format!("?t={}", timestamp);
+
+    // 1. Update Template
+    let full_template_url = format!("{}{}", template_url, cache_buster);
+    println!("Downloading template from: {}", full_template_url);
+    
+    let template_body = ureq::get(&full_template_url)
+        .call()
+        .with_context(|| format!("Failed to download template from {}", full_template_url))?
+        .into_string()?;
+
+    // Validation: Check for "inbounds" to ensure it's a valid config (manifest check)
+    if !template_body.contains("inbounds") {
+        bail!("❌ Validation failed: Downloaded content does not look like a valid sing-box config (missing 'inbounds').");
+    }
+
+    // Atomic Write
+    let tmp_path = template_path.with_extension("tmp");
+    fs::write(&tmp_path, &template_body)?;
+    fs::rename(&tmp_path, &template_path)?;
+    println!("✅ Template updated successfully.");
+
+    // 2. Update Env Example (if requested)
+    if let (Some(e_url), Some(e_path)) = (env_url, env_path) {
+        let full_env_url = format!("{}{}", e_url, cache_buster);
+        println!("Downloading env example from: {}", full_env_url);
+        
+        match ureq::get(&full_env_url).call() {
+            Ok(resp) => {
+                let env_body = resp.into_string()?;
+                let tmp_env = e_path.with_extension("tmp");
+                fs::write(&tmp_env, env_body)?;
+                fs::rename(&tmp_env, &e_path)?;
+                println!("📝 Env example updated.");
+            },
+            Err(e) => eprintln!("⚠️ Failed to update env example: {}", e),
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_render(template: PathBuf, output: PathBuf) -> Result<()> {
     // 1. Gather Environment Variables
     let env_vars: HashMap<String, String> = env::vars().collect();
 
     // 2. Read Template
-    let template_content = fs::read_to_string(&args.template)
-        .with_context(|| format!("Failed to read template file: {:?}", args.template))?;
+    let template_content = fs::read_to_string(&template)
+        .with_context(|| format!("Failed to read template file: {:?}", template))?;
 
-    // 2.1 Strip Comments (Simple JSONC support)
-    // serde_json is strict, so we remove // and /* */ comments.
-    // Note: This simple stripper might not handle edge cases like trailing commas perfectly if they were hidden by comments,
-    // but sing-box templates are generally well-formed JSONC.
+    // 2.1 Strip Comments
     let json_content = strip_comments(&template_content);
 
     // 3. Parse Template as JSON
@@ -39,15 +128,13 @@ fn main() -> Result<()> {
         .context("Failed to parse template as valid JSON. Ensure input is well-formed.")?;
 
     // 4. Process AST
-    // We pass env_vars for lookup
     let processed_root = process_value(root, &env_vars)?;
 
     // 5. Write Output
     let output_content = serde_json::to_string_pretty(&processed_root)?;
-    fs::write(&args.output, output_content)
-        .with_context(|| format!("Failed to write output file: {:?}", args.output))?;
+    fs::write(&output, output_content)
+        .with_context(|| format!("Failed to write output file: {:?}", output))?;
     
-    // println!("Successfully generated config at {:?}", args.output);
     Ok(())
 }
 
