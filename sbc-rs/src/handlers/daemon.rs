@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
+use crate::handlers::render;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -15,8 +16,19 @@ fn get_pid_file_path() -> PathBuf {
     env::var("SBC_PID_FILE").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/data/adb/sing-box-workspace/run/sing-box.pid"))
 }
 
-pub fn handle_run(config_path: PathBuf) -> Result<()> {
+pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>) -> Result<()> {
     info!("🚀 Starting sing-box supervisor...");
+    
+    // 0. Auto-Render (if requested)
+    if let Some(template) = template_path {
+        info!("🎨 Auto-rendering config from template: {:?}", template);
+        if let Err(e) = render::handle_render(template, config_path.clone()) {
+            error!("❌ Render failed: {}", e);
+            return Err(e);
+        }
+        info!("✅ Config rendered successfully.");
+    }
+
     let pid_file = get_pid_file_path();
     
     // Ensure run dir exists

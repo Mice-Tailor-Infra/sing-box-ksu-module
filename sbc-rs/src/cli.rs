@@ -43,6 +43,10 @@ pub enum Commands {
         /// Path to the config file to use
         #[arg(short, long)]
         config: PathBuf,
+
+        /// Path to the configuration template file (Optional, for auto-render)
+        #[arg(short, long)]
+        template: Option<PathBuf>,
     },
     /// Stop the running daemon gracefully
     Stop,

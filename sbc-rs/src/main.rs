@@ -16,11 +16,15 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Render { template, output } => render::handle_render(template, output),
+        Commands::Render { template, output } => {
+            render::handle_render(template, output)
+        }
         Commands::Update { template_url, template_path, env_url, env_path } => {
             update::handle_update(template_url, template_path, env_url, env_path)
-        },
-        Commands::Run { config } => daemon::handle_run(config),
+        }
+        Commands::Run { config, template } => {
+            daemon::handle_run(config, template)
+        }
         Commands::Stop => daemon::handle_stop(),
     }
 }
