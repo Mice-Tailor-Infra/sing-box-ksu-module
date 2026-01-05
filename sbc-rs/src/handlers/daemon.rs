@@ -82,17 +82,21 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>, working_
     }
 
     use std::os::unix::process::CommandExt;
-    let mut child = Command::new("sing-box")
-        .arg("run")
+    let mut child_cmd = Command::new("sing-box");
+    child_cmd.arg("run")
         .arg("-c")
         .arg(&config_path)
-        .current_dir(&final_wd) // All relative paths in config will resolve here
-        .pre_exec(|| {
+        .current_dir(&final_wd); // 所有配置中的相对路径都将相对于此目录解析
+
+    unsafe {
+        child_cmd.pre_exec(|| {
             // 内核级安全机制：如果父进程死亡，子进程将收到 SIGTERM 信号
-            unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM); }
+            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
             Ok(())
-        })
-        .spawn()
+        });
+    }
+
+    let mut child = child_cmd.spawn()
         .context("启动 sing-box 进程失败")?;
 
     let pid = child.id();
