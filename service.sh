@@ -32,8 +32,23 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         set +a
     fi
 
-    if [ -f "$TEMPLATE" ]; then
-        "$WORKSPACE/bin/envsubst" < "$TEMPLATE" > "$CONFFILE"
+    # 1. 渲染配置 (Strict Rust Mode)
+    # 相信 Rust 核心：不再提供 envsubst 回退，因为新版 JSON 模板与旧版 shell 替换不兼容
+    SBC_RS="$WORKSPACE/bin/sbc-rs"
+    if [ -x "$SBC_RS" ] && [ -f "$TEMPLATE" ]; then
+        ui_log "正在渲染配置..."
+        "$SBC_RS" render --template "$TEMPLATE" --output "$CONFFILE" >> "$LOG_FILE" 2>&1
+        if [ $? -ne 0 ]; then
+             ui_log "❌ 配置渲染失败 (Rust Core Error)，跳过本次启动。"
+             sleep $RETRY_DELAY
+             RETRY_COUNT=$((RETRY_COUNT + 1))
+             continue
+        fi
+    else
+        ui_log "❌ 严重错误: 找不到核心组件 ($SBC_RS) 或 模板丢失。"
+        sleep $RETRY_DELAY
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        continue
     fi
 
     # 2. 运行内核 (不使用 exec 以便捕获状态)
