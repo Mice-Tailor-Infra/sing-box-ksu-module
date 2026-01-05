@@ -1,3 +1,12 @@
+## v1.12.14-r23-beta
+
+- **sbc-rs 守护进程化**：引入 `sbc-rs` 二进制作为核心进程管理器。
+  - `sbc-rs run`: 替代 Shell 脚本进行服务托管，实现更健壮的信号转发和子进程回收。
+  - `sbc-rs stop`: 只有 SIGTERM 优雅停止，**严禁 SIGKILL**，彻底根治 Android 网络栈残留问题。
+- **本地测试增强**：`customize.sh` 优先安装 zip 包内的配置模板，支持离线调试。
+- **命令行工具完善**：`/system/bin/sbc-rs` 软链直达，手动调试更方便。
+- **安全性提升**：移除了所有可能的 `kill -9` 调用。
+
 ## v1.12.14-r22
 
 - **sbc update 增强**：支持同步更新 `.env.example` 模板，同时保持用户本地 `.env` 不动
