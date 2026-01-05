@@ -1,0 +1,7 @@
+{
+  "log": { "level": "${LOG_LEVEL}" },
+  "dns": { "servers": [ "8.8.8.8", "{{DNS_SERVERS}}" ] },
+  "extra": "{{MISSING_VAR}}",
+  "mixed": [ { "type": "${MIXED_TYPE}", "users": "{{MIXED_USERS}}" } ],
+  "struct_val": "{{STRUCT_VAL}}"
+}
