@@ -38,7 +38,7 @@ fn main() -> Result<()> {
             update::handle_update(template_url, template_path, env_url, env_path)
         }
         Commands::Run { config, template, working_dir } => {
-            daemon::handle_run(config, template, working_dir)
+            daemon::handle_run(Some(config), template, working_dir)
         }
         Commands::Stop => daemon::handle_stop(),
     }

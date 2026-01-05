@@ -43,113 +43,158 @@ fn load_env_file(path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>, working_dir: Option<PathBuf>) -> Result<()> {
-    let workspace = get_workspace_path(&config_path);
-    
-    // 0. 加载环境配置
+pub fn handle_run(config_path: Option<PathBuf>, template_path: Option<PathBuf>, working_dir: Option<PathBuf>) -> Result<()> {
+    // 0. 路径解析
+    // 如果没传 config_path，则假定在默认位置
+    let resolved_config = config_path.unwrap_or_else(|| PathBuf::from("/data/adb/sing-box-workspace/etc/config.json"));
+    let workspace = get_workspace_path(&resolved_config);
+    let pid_file = get_pid_file_path(&workspace);
+    let stop_flag = workspace.join("STOP");
+
+    // 1. 加载环境配置
     let env_path = workspace.join(".env");
     if let Err(e) = load_env_file(&env_path) {
         warn!("⚠️ 无法在 {:?} 加载 .env 文件: {}", env_path, e);
     }
 
-    info!("🚀 正在启动 sing-box 监控进程...");
-    info!("🏷️  版本 (构建时间): {}", crate::build::BUILD_TIME);
-    info!("📂 工作目录: {:?}", workspace);
-    
-    // 0. 自动渲染（如果已请求）
-    if let Some(template) = template_path {
-        info!("🎨 正在从模板自动渲染配置: {:?}", template);
-        if let Err(e) = render::handle_render(template, config_path.clone()) {
-            error!("❌ 渲染失败: {}", e);
-            return Err(e);
-        }
-        info!("✅ 配置渲染成功。");
-    }
-
-    let pid_file = get_pid_file_path(&workspace);
-    
-    // 确保运行目录存在
-    if let Some(parent) = pid_file.parent() {
-        if let Err(e) = fs::create_dir_all(parent) {
-             warn!("⚠️ 创建运行目录 {:?} 失败: {}", parent, e);
-        }
-    }
-
-    // 1. 启动子进程
-    // 如果提供了 working_dir 则使用，否则默认为工作空间根目录
-    let final_wd = working_dir.unwrap_or_else(|| workspace.clone());
-    if !final_wd.exists() {
-        fs::create_dir_all(&final_wd).context("法创建工作目录")?;
-    }
-
-    use std::os::unix::process::CommandExt;
-    
-    // 尝试在 sbc-rs 同级目录下找到 sing-box
-    let mut singbox_bin = "sing-box".to_string();
-    if let Ok(exe_path) = env::current_exe() {
-        if let Some(parent) = exe_path.parent() {
-            let sibling = parent.join("sing-box");
-            if sibling.exists() {
-                singbox_bin = sibling.to_string_lossy().to_string();
-            }
-        }
-    }
-
-    let mut child_cmd = Command::new(&singbox_bin);
-    child_cmd.arg("run")
-        .arg("-c")
-        .arg(&config_path)
-        .arg("-D")
-        .arg(&final_wd)
-        .current_dir(&final_wd); // 作为双重保险，同时设置 CWD
-
-    unsafe {
-        child_cmd.pre_exec(|| {
-            // 内核级安全机制：如果父进程死亡，子进程将收到 SIGTERM 信号
-            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
-            Ok(())
-        });
-    }
-
-    info!("🚀 执行指令: {} run -c {:?} -D {:?}", singbox_bin, config_path, final_wd);
-    let mut child = child_cmd.spawn()
-        .context("启动 sing-box 进程失败")?;
-
-    let pid = child.id();
-    info!("✅ sing-box 已启动，PID: {} | 工作目录: {:?}", pid, final_wd);
-
-    // 2. Write PID file
-    fs::write(&pid_file, pid.to_string())?;
-
-    // 3. Setup Signal Handling
+    // 设置信号处理
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
-    let child_pid = pid;
-
     ctrlc::set_handler(move || {
-        if !r.load(Ordering::SeqCst) { return; }
         r.store(false, Ordering::SeqCst);
-        
-        info!("🛑 接收到终止信号，正在关闭子进程...");
-        let pid = Pid::from_raw(child_pid as i32);
-        match signal::kill(pid, Signal::SIGTERM) {
-             Ok(_) => info!("已向子进程发送 SIGTERM 信号"),
-             Err(e) => error!("向子进程转发信号失败: {}", e),
-        }
-    }).context("设置 Ctrl-C 处理器出错")?;
+        info!("⏳ 接收到终止信号，正在准备退出...");
+    }).context("设置信号处理程序失败")?;
 
-    // 4. 监控循环
-    match child.wait() {
-        Ok(status) => {
-            if !status.success() {
-                 anyhow::bail!("sing-box 异常退出: {}", status);
-            }
-            info!("sing-box 已退出: {}", status);
-        },
-        Err(e) => error!("等候 sing-box 退出时出错: {}", e),
+    let mut retry_count = 0;
+    let max_retries = 4;
+
+    // 工作目录准备
+    let final_wd = working_dir.unwrap_or_else(|| workspace.clone());
+    if !final_wd.exists() {
+        fs::create_dir_all(&final_wd).context("无法创建工作目录")?;
     }
 
-    let _ = fs::remove_file(pid_file);
+    while running.load(Ordering::SeqCst) {
+        // 1. 检查手动停止标志
+        if stop_flag.exists() {
+            info!("🛑 检测到停止标志 (STOP Flag)，终止监听。");
+            break;
+        }
+
+        // 2. 日志轮转
+        if let Some(log_file) = env::var_os("LOG_FILE").map(PathBuf::from) {
+             if log_file.exists() {
+                if let Ok(metadata) = fs::metadata(&log_file) {
+                    if metadata.len() > 1024 * 1024 { // 1MB
+                        let old_log = log_file.with_extension("log.old");
+                        let _ = fs::rename(&log_file, old_log);
+                        info!("🔄 日志已轮转 (超过 1MB)");
+                    }
+                }
+             }
+        }
+
+        info!("🚀 正在启动 sing-box 监控进程...");
+        info!("🏷️  版本 (构建时间): {}", crate::build::BUILD_TIME);
+        info!("📂 工作目录: {:?}", final_wd);
+
+        // 3. 自动渲染
+        if let Some(ref template) = template_path {
+            info!("🎨 正在从模板自动渲染配置: {:?}", template);
+            render::handle_render(template.clone(), resolved_config.clone())?;
+            info!("✅ 配置渲染成功。");
+        }
+
+        // 4. 定位并启动进程
+        use std::os::unix::process::CommandExt;
+        let mut singbox_bin = "sing-box".to_string();
+        if let Ok(exe_path) = env::current_exe() {
+            if let Some(parent) = exe_path.parent() {
+                let sibling = parent.join("sing-box");
+                if sibling.exists() {
+                    singbox_bin = sibling.to_string_lossy().to_string();
+                }
+            }
+        }
+
+        info!("💨 执行指令: {} run -c {:?} -D {:?}", singbox_bin, resolved_config, final_wd);
+        
+        // 创建 Command 并配置
+        let mut child_cmd = Command::new(&singbox_bin);
+        child_cmd.arg("run")
+            .arg("-c")
+            .arg(&resolved_config)
+            .arg("-D")
+            .arg(&final_wd)
+            .current_dir(&final_wd);
+            
+        unsafe {
+            child_cmd.pre_exec(|| {
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                Ok(())
+            });
+        }
+
+        let mut child = child_cmd.spawn()
+            .context("启动 sing-box 进程失败")?;
+
+        let pid = child.id();
+        info!("✅ sing-box 已启动，PID: {}", pid);
+        let _ = fs::write(&pid_file, pid.to_string());
+
+        // 5. 辅助杀死线程
+        let killer_running = running.clone();
+        let pid_to_kill = pid;
+        thread::spawn(move || {
+            while killer_running.load(Ordering::SeqCst) {
+                thread::sleep(Duration::from_millis(500));
+            }
+            unsafe { libc::kill(pid_to_kill as i32, libc::SIGTERM); }
+        });
+
+        // 6. 等待循环
+        let mut exit_status = None;
+        while running.load(Ordering::SeqCst) {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    exit_status = Some(status);
+                    break;
+                }
+                Ok(None) => {
+                    thread::sleep(Duration::from_millis(500));
+                }
+                Err(e) => {
+                    error!("❌ 等待子进程时出错: {}", e);
+                    break;
+                }
+            }
+        }
+
+        // 7. 处理退出结果
+        if let Some(status) = exit_status {
+            if status.success() {
+                info!("✨ sing-box 正常退出。");
+                break; 
+            } else {
+                error!("⚠️ sing-box 异常退出: {}", status);
+                retry_count += 1;
+            }
+        } else if !running.load(Ordering::SeqCst) {
+            info!("🛑 收到退出信号，终止运行。");
+            let _ = child.kill();
+            break;
+        }
+
+        if retry_count >= max_retries {
+            error!("❌ 已达到最大重试次数，监护停止。");
+            break;
+        }
+
+        info!("⏳ 将在 10 秒后进行第 {}/{} 次重启尝试...", retry_count, max_retries);
+        thread::sleep(Duration::from_secs(10));
+    }
+
+    let _ = fs::remove_file(&pid_file);
     Ok(())
 }
 
