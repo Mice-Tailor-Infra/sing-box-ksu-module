@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use log::{warn, info};
+use log::warn;
 
 pub fn handle_render(template: PathBuf, output: PathBuf) -> Result<()> {
     // 1. Gather Environment Variables
