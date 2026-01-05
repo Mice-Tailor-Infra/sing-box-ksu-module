@@ -97,12 +97,8 @@ export PATH="/tmp:$PATH" # Put mock in path
 # sbc-rs uses "sing-box" in Command::new(). PATH is sufficient.
 
 echo "Starting sbc-rs run (background)..."
-# We need to run it from sbc script or direct binary. Direct binary for unit test.
-# But sbc-rs expects to write PID file to /data/adb/... which might not exist in CI.
-# We should override PID_FILE path? It's hardcoded const in main.rs.
-# Wait, for CI validation we can't easily change the const without recompiling.
-# We should probably mkdir -p the path in CI script.
-mkdir -p /data/adb/sing-box-workspace/run
+# Override PID file location via env var (feature added for testing)
+export SBC_PID_FILE="/tmp/sing-box.pid"
 
 "$SBC_BIN" run --config "$OUTPUT_PATH" > /tmp/daemon.log 2>&1 &
 DAEMON_PID=$!
@@ -118,6 +114,8 @@ else
 fi
 
 echo "Stopping daemon..."
+# Stop also needs the same env var
+export SBC_PID_FILE="/tmp/sing-box.pid"
 "$SBC_BIN" stop
 
 sleep 1

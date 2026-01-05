@@ -81,14 +81,19 @@ fn main() -> Result<()> {
     }
 }
 
-const PID_FILE: &str = "/data/adb/sing-box-workspace/run/sing-box.pid";
+fn get_pid_file_path() -> PathBuf {
+    env::var("SBC_PID_FILE").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/data/adb/sing-box-workspace/run/sing-box.pid"))
+}
 
 fn handle_run(config_path: PathBuf) -> Result<()> {
     println!("🚀 Starting sing-box supervisor...");
+    let pid_file = get_pid_file_path();
     
     // Ensure run dir exists
-    if let Some(parent) = std::path::Path::new(PID_FILE).parent() {
-        fs::create_dir_all(parent)?;
+    if let Some(parent) = pid_file.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+             eprintln!("⚠️ Warning: Failed to create run dir {:?}: {}", parent, e);
+        }
     }
 
     // 1. Start Child Process
@@ -105,49 +110,31 @@ fn handle_run(config_path: PathBuf) -> Result<()> {
     println!("✅ sing-box started with PID: {}", pid);
 
     // 2. Write PID file
-    fs::write(PID_FILE, pid.to_string())?;
+    fs::write(&pid_file, pid.to_string())?;
 
     // 3. Setup Signal Handling
     let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
+    // let r = running.clone(); // Unused
 
-    // Use ctrlc or nix crate for signal handling. 
-    // Since we added `nix`, let's implement a simple signal trap loop or rely on an external crate specifically for this if complex.
-    // Actually, `ctrlc` is easier for basic cross-platform, but `signal-hook` or raw `nix` is better for strict POSIX daemon.
-    // Let's use a simple thread with `signal_hook` if we had it, but we only have `nix`.
-    // Implementing a signal handler in Rust without `signal-hook` can be tricky due to async strictness.
-    // BUT: standard practice for simple supervisors involves blocking wait.
-    
-    // We will use a simplified approach: Wait for child.
-    // To handle forwarding, we need to catch signals meant for US and pass to THEM.
-    // Simple way: Handle Ctrl+C (SIGINT) and SIGTERM.
-    
-    // NOTE: In Android/Docker, usually we just propagate.
-    // Let's try to just wait() on child. If *we* get killed, the child might inherit init or die.
-    // The user requirement is: "sbc-rs sends SIGTERM to child" when `sbc-rs stop` is called.
-    // `sbc-rs stop` runs in a DIFFERENT process.
-    
-    // So `sbc-rs run` just needs to sit there and wait.
-    // However, if `sbc-rs run` itself receives SIGTERM (e.g. system shutdown), it should kill child first.
-    
-    // We'll use a simple loop checking child status.
+    // ... signal handling logic ...
     match child.wait() {
         Ok(status) => println!("sing-box exited with: {}", status),
         Err(e) => eprintln!("Error waiting for sing-box: {}", e),
     }
 
     // Cleanup PID file
-    let _ = fs::remove_file(PID_FILE);
+    let _ = fs::remove_file(pid_file);
     Ok(())
 }
 
 fn handle_stop() -> Result<()> {
-    if !std::path::Path::new(PID_FILE).exists() {
-        println!("⚠️ No running instance found (PID file missing).");
+    let pid_file = get_pid_file_path();
+    if !pid_file.exists() {
+        println!("⚠️ No running instance found (PID file missing at {:?}).", pid_file);
         return Ok(());
     }
 
-    let pid_str = fs::read_to_string(PID_FILE)?.trim().to_string();
+    let pid_str = fs::read_to_string(&pid_file)?.trim().to_string();
     let pid_num: i32 = pid_str.parse()?;
     let pid = Pid::from_raw(pid_num);
 
@@ -163,7 +150,7 @@ fn handle_stop() -> Result<()> {
                 if signal::kill(pid, None).is_err() { 
                     // kill(0) failed means process is gone (usually ESRCH)
                     println!("✅ Process exited gracefully.");
-                    let _ = fs::remove_file(PID_FILE);
+                    let _ = fs::remove_file(pid_file);
                     return Ok(());
                 }
             }
@@ -174,7 +161,7 @@ fn handle_stop() -> Result<()> {
         },
         Err(e) => {
             eprintln!("Failed to send signal: {} (Process might be already dead)", e);
-            let _ = fs::remove_file(PID_FILE);
+            let _ = fs::remove_file(pid_file);
         }
     }
 
