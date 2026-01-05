@@ -9,6 +9,8 @@ CONFFILE="$WORKSPACE/etc/config.json"
 SERVICE_PATH="/data/adb/modules/sing-box-ksu-module/service.sh"
 LOG_FILE="$WORKSPACE/var/log/sing-box.log"
 TEMPLATE_URL="https://miceworld.top/sing-box-config-templates/mobile/config.template.json"
+ENV_EXAMPLE="$WORKSPACE/.env.example"
+ENV_EXAMPLE_URL="https://miceworld.top/sing-box-config-templates/mobile/.env.example"
 
 case "$1" in
     start)
@@ -55,7 +57,15 @@ case "$1" in
         if curl -fL -o "$TEMPLATE.tmp" "${TEMPLATE_URL}${CACHE_BUSTER}"; then
             if grep -q "inbounds" "$TEMPLATE.tmp"; then
                 mv "$TEMPLATE.tmp" "$TEMPLATE"
-                echo "✅ 逻辑同步成功 (已穿透缓存)。正在唤醒本地渲染引擎..."
+                echo "✅ 逻辑同步成功 (已穿透缓存)。"
+                
+                # === 更新 .env 模板 (不覆盖用户 .env) ===
+                if curl -fL -o "$ENV_EXAMPLE.tmp" "${ENV_EXAMPLE_URL}${CACHE_BUSTER}"; then
+                    mv "$ENV_EXAMPLE.tmp" "$ENV_EXAMPLE"
+                    echo "📝 .env.example 模板已同步，请对比 .env.example 检查变更。"
+                fi
+
+                echo "正在唤醒本地渲染引擎..."
                 if [ -f "$ENV_FILE" ]; then
                     set -a; . "$ENV_FILE"; set +a
                     "$WORKSPACE/bin/envsubst" < "$TEMPLATE" > "$CONFFILE"
