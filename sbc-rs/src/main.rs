@@ -1,6 +1,8 @@
 mod cli;
 mod handlers;
 
+shadow_rs::shadow!(build);
+
 use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Commands};

@@ -53,6 +53,7 @@ pub fn handle_run(config_path: PathBuf, template_path: Option<PathBuf>, working_
     }
 
     info!("🚀 正在启动 sing-box 监控进程...");
+    info!("🏷️  版本 (构建时间): {}", crate::build::BUILD_TIME);
     info!("📂 工作目录: {:?}", workspace);
     
     // 0. 自动渲染（如果已请求）

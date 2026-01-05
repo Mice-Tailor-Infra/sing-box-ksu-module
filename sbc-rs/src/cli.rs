@@ -1,8 +1,15 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use crate::build;
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(
+    author, 
+    version = build::BUILD_TIME,  // 使用构建时间戳作为版本号
+    long_version = build::CLAP_LONG_VERSION,
+    about = "Mice System Tools - sing-box 增强型监控工具",
+    long_about = None
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
