@@ -26,14 +26,17 @@ case "$1" in
         if pgrep -f "$BIN" > /dev/null; then
             echo "Sing-box 已经在运行中。"
         else
-            echo "正在启动 Sing-box (守护模式)..."
-            nohup sh "$SERVICE_PATH" > /dev/null 2>&1 &
-            echo "启动指令已发送。"
+            echo "正在启动 Sing-box (Rust 监护模式)..."
+            nohup "$SBC_RS" run \
+                --config "$CONFFILE" \
+                --template "$TEMPLATE" \
+                -D "$WORKSPACE/var/lib/sing-box" \
+                >> "$LOG_FILE" 2>&1 &
+            echo "✅ 启动指令已发送 (Background)。"
         fi
         ;;
     stop)
         echo "正在停止 Sing-box (Rust Stop)..."
-        # 设置停止标志，防止 service.sh 自动重启
         touch "$STOP_FLAG"
         "$SBC_RS" stop
         ;;
@@ -43,31 +46,14 @@ case "$1" in
         "$0" start
         ;;
     update)
-        echo "📡 正在通过 EdgeOne 连接 miceworld 指挥部 (One-Click Update)..."
-        # 1. 执行下载与校验 (Rust Native)
+        # 直接透传给 sbc-rs update，逻辑都在 Rust 里
+        echo "📡 正在执行一键更新 (Rust Core)..."
         "$SBC_RS" update \
             --template-url "$TEMPLATE_URL" \
             --template-path "$TEMPLATE" \
             --env-url "$ENV_EXAMPLE_URL" \
-            --env-path "$ENV_EXAMPLE"
-        
-        RET=$?
-        [ $RET -ne 0 ] && exit $RET
-        
-        # 2. 执行渲染与重载
-        echo "正在唤醒本地渲染引擎 (Rust Engine)..."
-        if [ -f "$ENV_FILE" ]; then
-            set -a; . "$ENV_FILE"; set +a
-            "$SBC_RS" render --template "$TEMPLATE" --output "$CONFFILE"
-            if [ $? -eq 0 ]; then
-                echo "🚀 渲染完成 (Rust AST)，执行热重载..."
-                "$0" restart
-            else
-                echo "❌ 渲染失败。"
-            fi
-        else
-            echo "⚠️ 警告：未发现 .env 凭证，无法完成渲染。"
-        fi
+            --env-path "$ENV_EXAMPLE" \
+            && "$0" restart
         ;;
     status)
         if pgrep -f "$BIN" > /dev/null; then
