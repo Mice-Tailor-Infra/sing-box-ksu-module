@@ -68,6 +68,7 @@ mkdir -p "$MODPATH/system/bin"
 
 # 创建软链接（源路径 -> 目标路径）
 ln -sf "$WORKSPACE/bin/sbc" "$MODPATH/system/bin/sbc" && ui_print "    🔗 sbc -> Workspace"
+ln -sf "$WORKSPACE/bin/sbc-rs" "$MODPATH/system/bin/sbc-rs" && ui_print "    🔗 sbc-rs -> Workspace"
 ln -sf "$WORKSPACE/bin/sing-box" "$MODPATH/system/bin/sing-box" && ui_print "    🔗 sing-box -> Workspace"
 
 ui_print "    ✅ 软链接建立完成"
