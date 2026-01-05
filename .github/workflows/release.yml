@@ -94,13 +94,19 @@ jobs:
           zip -ry "$ZIP_NAME" bin/ system/ customize.sh uninstall.sh service.sh module.prop README.md
           echo "ZIP_PATH=$ZIP_NAME" >> $GITHUB_ENV
 
-      - name: Publish to GitHub Releases
-        uses: softprops/action-gh-release@v2
+#      - name: Publish to GitHub Releases
+#        uses: softprops/action-gh-release@v2
+#        with:
+#          tag_name: ${{ env.VERSION }}
+#          files: ${{ env.ZIP_PATH }}
+#          # body_path: release_notes.md
+#          generate_release_notes: false
+
+      - name: Upload Module Artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ env.VERSION }}
-          files: ${{ env.ZIP_PATH }}
-          # body_path: release_notes.md
-          generate_release_notes: false
+          name: ${{ env.ZIP_PATH }}
+          path: ${{ env.ZIP_PATH }}
 
 #      - name: Update OTA Metadata
 #        run: |
