@@ -53,7 +53,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/cross-image.tar
-          key: docker-ghcr-cross-rs-aarch64-linux-android-main
+          key: docker-ghcr-cross-rs-aarch64-linux-android-edge
 
       - name: Load Docker Image
         if: steps.cache-docker.outputs.cache-hit == 'true'
@@ -63,9 +63,9 @@ jobs:
         if: steps.cache-docker.outputs.cache-hit != 'true'
         run: |
           echo "⬇️ Pulling Docker image..."
-          docker pull ghcr.io/cross-rs/aarch64-linux-android:main
+          docker pull ghcr.io/cross-rs/aarch64-linux-android:edge
           echo "💾 Saving Docker image to cache..."
-          docker save ghcr.io/cross-rs/aarch64-linux-android:main -o /tmp/cross-image.tar
+          docker save ghcr.io/cross-rs/aarch64-linux-android:edge -o /tmp/cross-image.tar
 
       - name: Build sbc-rs (Android)
         run: |
