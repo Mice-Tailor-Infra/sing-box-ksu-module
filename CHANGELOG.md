@@ -1,27 +1,43 @@
-## v1.12.14-r23-beta.3
+## v1.12.16-r23
 
-- **版本追溯增强**：集成 `shadow-rs`，将构建时间戳作为二进制版本号，彻底解决运行版本辨识模糊问题。
-- **绝对的 Shell 脚本空心化 (Definitive Hollowing)**：全面重构 `service.sh` 与 `bin/sbc`。
-  - 重启监控循环、日志轮转逻辑、停止标志 (`STOP` flag) 检测全部迁移至 Rust 核心。
-  - `service.sh` 退化为单行 `exec sbc-rs run`，彻底消除 Shell 脚本的不确定性。
-- **版本追溯增强**：集成 `shadow-rs`，将构建时间戳作为二进制版本号，彻底解决运行版本辨识模糊问题。
-- **环境对齐**：更新并提交 `Cargo.lock`，锁定依赖链，确保构建一致性。
+> 🎉 **里程碑版本 (Milestone Release)**
+> 本次更新是模块架构的重大飞跃。我们将内核从 Shell 脚本彻底迁移至 Rust 驱动的智能监护系统，并同步了最新的 Upstream Core。
 
-## v1.12.14-r23-beta.2
+### 🚀 核心升级 (Core)
+- **Upstream Sync**: 集成 Sing-box **v1.12.16** 最新内核，跟进上游特性与修复。
+- **Rust Native Supervisor (`sbc-rs`)**: 
+  - 全面接管进程生命周期管理，替代脆弱的 shell 循环。
+  - 实现 **Smart Retry**：子进程崩溃自动重启（最大 4 次/分钟），防止无限重启耗尽电量。
+  - 实现 **Log Rotation**：内置日志轮转（1MB 阈值），杜绝 `sing-box.log` 撑爆存储空间。
 
-- **进程隔离加固**：
-  - `sbc-rs` 显式向 `sing-box` 传递 `-D` (Working Directory) 参数，确保缓存和 UI 文件强制进入隔离目录。
-  - 使用绝对路径调用同级二进制，规避 Android 复杂的 PATH 优先级陷阱。
-- **内核级安全**：实现 `PR_SET_PDEATHSIG` 子进程死亡绑定，确保父进程崩溃时 `sing-box` 绝不“落单”。
-- **全量汉化 (i18n)**：所有日志输出、CLI 帮助信息及内部代码注释完全本地化为简体中文。
+### 🛡️ 架构与安全 (Architecture & Security)
+- **绝对的 Shell 空心化 (Absolute Shell Hollowing)**: 
+  - `service.sh` 和 `bin/sbc` 现仅作为极简入口，逻辑全部下沉至 Rust。
+  - 彻底消除了因 Android Shell 环境差异导致的兼容性问题。
+- **内核级死亡绑定 (Kernel Death Binding)**: 
+  - 引入 `PR_SET_PDEATHSIG`，确保父进程（监护者）意外退出时，子进程（sing-box）立即被内核回收，彻底告别僵尸进程。
+- **PID 统一管理**: 
+  - 规范化 PID 文件路径至 `$WORKSPACE/var/run/sing-box.pid`。
+  - `sbc stop` 现在通过读取 PID 发送精准的 `SIGTERM` 信号，实现优雅停机。
 
-## v1.12.14-r23-beta.1
+### ⚙️ 配置与工程化 (Configuration & Engineering)
+- **Config Override v2**: 
+  - 引入基于 AST (抽象语法树) 的 JSON 渲染引擎，完美支持复杂嵌套结构的动态注入。
+  - 彻底解决 `sed` 在处理多行 JSON 时的语法破坏问题。
+- **Full Cloud Sync**: 
+  - 支持基于 GitHub Pages 的分支映射路由，实现配置模板的秒级、原子化更新。
+  - 实现了 `.env.example` 的增量同步，新功能上线无需重置用户配置。
+- **Build Timestamp Versioning**: 
+  - 集成 `shadow-rs`，二进制通过 `sbc-rs --version` 直接暴露构建时间戳，精准溯源。
+- **隔离与汉化**:
+  - `-D` 工作目录隔离：强制核心在隔离目录下运行，保持 `$WORKSPACE` 根目录整洁。
+  - **i18n**: 全量完成代码注释、CLI 输出与运行日志的简体中文本地化。
 
-- **架构级革新**：全面迁移至 Rust 驱动的监护架构 (`sbc-rs`)。
-  - 接管配置渲染、进程监控和信号转发，极大提升了 Android 环境下的服务稳定性。
-- **路径重构**：实现零硬编码的动态 Workspace 分辨，支持环境变量和自动推断。
-- **日志对齐**：日志输出切换至本地时间（Chrono），与系统 `service.sh` 日志格式无缝衔接。
-- **安装包精细化**：精简 `customize.sh`，移除冗余的旧版迁移逻辑，优化安装流程。
+### 📦 杂项 (Misc)
+- 修复了 PID 目录缺失导致的启动失败。
+- 修复了 `sbc stop` 在某些边缘情况下的误报。
+- 优化了 CI/CD 流程，修复了 Cross 编译链的链接器问题 (libunwind)。
+
 
 ## v1.12.14-r22
 
